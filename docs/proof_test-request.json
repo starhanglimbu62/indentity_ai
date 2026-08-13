@@ -1,0 +1,4 @@
+{
+  "proof": {"mock": "proof-data"},
+  "publicSignals": {"verification_request_id": "test-request", "challenge": "mock-challenge", "claim_id": "AGE_OVER_18", "current_ts": 1700000000}
+}

@@ -50,6 +50,10 @@ class VerificationRequest(models.Model):
         default=VerificationRequestStatus.PENDING
     )
 
+    # Challenge/nonce issued by verifier and bound to the proof
+    challenge = models.CharField(max_length=128, null=True, blank=True)
+    challenge_expires_at = models.DateTimeField(null=True, blank=True)
+
     user_consented_at = models.DateTimeField(
         null=True,
         blank=True

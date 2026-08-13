@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     CreateVerificationRequestView,
+    RequestChallengeView,
     ConsentView,
     VerifyRequestView,
 )
@@ -13,6 +14,12 @@ urlpatterns = [
         "request/",
         CreateVerificationRequestView.as_view(),
         name="create-verification-request",
+    ),
+
+    path(
+        "<uuid:pk>/challenge/",
+        RequestChallengeView.as_view(),
+        name="request-challenge",
     ),
 
     path(

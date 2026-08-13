@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.identity",
     "apps.verification",
     "apps.banks",
+    "apps.audit",
 ]
 
 

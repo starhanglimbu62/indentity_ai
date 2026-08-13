@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.identity.services.validation import DocumentValidationService
+
 from .models import (
     IdentityDocument,
     VerifiableCredential,
@@ -9,6 +11,13 @@ from .models import (
 class IdentityDocumentSerializer(
     serializers.ModelSerializer
 ):
+
+    def validate_document_file(self, value):
+        try:
+            DocumentValidationService.validate_file(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        return value
 
     class Meta:
         model = IdentityDocument
