@@ -1,38 +1,192 @@
+# ============================================================
+# IdentityAI - Root Git Ignore
+# ============================================================
+
+# ------------------------------------------------------------
 # Python
+# ------------------------------------------------------------
+
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
-# Virtual environment
+# Python environments
 env/
 venv/
 .venv/
+ENV/
+env.bak/
+venv.bak/
 
-# Django
-*.log
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
-
-# Environment variables
-.env
-.env.*
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
 
 # Testing / coverage
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
 
-# Secrets / certificates
+# ------------------------------------------------------------
+# Django
+# ------------------------------------------------------------
+
+*.log
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+
+# User uploads / generated files
+media/
+staticfiles/
+
+# Django secret/local files
+local_settings.py
+
+# ------------------------------------------------------------
+# Environment / secrets
+# ------------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Certificates / private keys
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
+
+# ------------------------------------------------------------
+# Node / Next.js
+# ------------------------------------------------------------
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Production build
+dist/
+
+# Vite / other frontend caches
+.vite/
+.cache/
+
+# npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Package manager caches
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.pnpm-debug.log*
+
+# Optional local environment files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ------------------------------------------------------------
+# TypeScript
+# ------------------------------------------------------------
+
+*.tsbuildinfo
+next-env.d.ts
+
+# ------------------------------------------------------------
+# IDE / Editors
+# ------------------------------------------------------------
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+.idea/
+*.iml
+
+# Neovim / Vim
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# OS
+# ------------------------------------------------------------
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ------------------------------------------------------------
+# Temporary files
+# ------------------------------------------------------------
+
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ------------------------------------------------------------
+# Agent / local AI caches
+# ------------------------------------------------------------
+
+.agent-cache/
+.copilot-cache/
+
+# Keep project instructions and memory tracked.
+# Do NOT ignore:
+# .github/
+# .agent/
+# AGENTS.md
+# docs/
+
+# ------------------------------------------------------------
+# Docker
+# ------------------------------------------------------------
+
+*.pid
+docker-data/
+docker-volumes/
+
+# ------------------------------------------------------------
+# Local infrastructure data
+# ------------------------------------------------------------
+
+redis-data/
+postgres-data/
+minio-data/
+kafka-data/
+
+# ------------------------------------------------------------
+# Generated reports / local exports
+# ------------------------------------------------------------
+
+reports/
+exports/
