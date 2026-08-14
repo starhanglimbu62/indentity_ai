@@ -527,6 +527,23 @@ def main() -> int:
     dob_ts = int(datetime.combine(dob, datetime.min.time()).timestamp())
     current_ts = int(timezone.now().timestamp())
 
+    # Ensure the zkey is in the expected location so the Node prover can run snarkjs.
+    # The build artifacts are stored under docs/zk_build; copy the zkey into docs/ if needed.
+    try:
+        zkey_src = PROJECT_ROOT / 'docs' / 'zk_build' / 'age_over_18.zkey'
+        zkey_dst = PROJECT_ROOT / 'docs' / 'age_over_18.zkey'
+        if zkey_src.exists() and not zkey_dst.exists():
+            import shutil
+
+            shutil.copyfile(str(zkey_src), str(zkey_dst))
+            record_test('ZKey copied to prover path', True)
+        elif zkey_dst.exists():
+            record_test('ZKey already present', True)
+        else:
+            record_test('ZKey missing (no copy available)', False, f"Checked {zkey_src}")
+    except Exception as exc:
+        record_test('ZKey presence check', False, str(exc))
+
     # Remove any precomputed artifact for this request so prover cannot fallback
     artifact_path = PROJECT_ROOT / 'docs' / f'proof_{verification_request.id}.json'
     verified_artifact = PROJECT_ROOT / 'docs' / f'verified_{verification_request.id}.json'

@@ -3,8 +3,5 @@
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
   "/": "pages/index.js",
-  "/dashboard": "pages/dashboard.js",
-  "/register": "pages/register.js",
-  "/login": "pages/login.js",
-  "/bank": "pages/bank.js"
+  "/register": "pages/register.js"
 }
