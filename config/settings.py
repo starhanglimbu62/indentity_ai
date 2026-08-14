@@ -10,17 +10,36 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY",
-    "development-only-secret-key"
-)
+from django.core.exceptions import ImproperlyConfigured
 
-DEBUG = os.getenv("DEBUG", "True") == "True"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+
+# DEBUG should default to False in non-development environments
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 ]
+
+# Enforce SECRET_KEY presence in non-debug (production-like) runs
+if not DEBUG and not SECRET_KEY:
+    raise ImproperlyConfigured("DJANGO_SECRET_KEY environment variable is required when DEBUG is False")
+
+# Provide a safe default for local development to avoid breaking tests/CI when explicitly DEBUG=True
+if DEBUG and not SECRET_KEY:
+    SECRET_KEY = "development-only-secret-key"
+
+# Production security defaults (can be overridden via env)
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True") == "True" if not DEBUG else False
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "True") == "True" if not DEBUG else False
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "True") == "True" if not DEBUG else False
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000")) if not DEBUG else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "True") == "True" if not DEBUG else False
+SECURE_HSTS_PRELOAD = os.getenv("SECURE_HSTS_PRELOAD", "True") == "True" if not DEBUG else False
+SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY", "no-referrer-when-downgrade")
+
+# Other settings remain unchanged
 
 
 INSTALLED_APPS = [
@@ -134,3 +153,18 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = "accounts.User"
+
+#for smoke test
+import sys
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_HOSTS",
+        "127.0.0.1,localhost"
+    ).split(",")
+    if host.strip()
+]
+
+if "test" in sys.argv:
+    ALLOWED_HOSTS.append("testserver")

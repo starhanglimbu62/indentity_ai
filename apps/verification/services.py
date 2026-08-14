@@ -6,85 +6,66 @@ from .models import (
     VerificationRequestStatus,
 )
 
+from apps.common.exceptions import InvalidStateTransition
+
 
 class VerificationService:
 
     @staticmethod
     @transaction.atomic
-    def create_request(
-        bank,
-        user,
-        credential,
-        claim
-    ):
-
-        request = VerificationRequest.objects.create(
-            bank=bank,
-            user=user,
-            credential=credential,
-            claim=claim,
-        )
-
+    def create_request(bank, user, credential, claim):
+        """Create a verification request. Caller must ensure caller identity/permissions."""
+        request = VerificationRequest.objects.create(bank=bank, user=user, credential=credential, claim=claim)
         return request
 
-
     @staticmethod
     @transaction.atomic
-    def approve_request(
-        verification_request
-    ):
+    def approve_request(verification_request):
+        """Approve a pending verification request (user consent).
 
-        if (
-            verification_request.status
-            != VerificationRequestStatus.PENDING
-        ):
-            raise ValueError(
-                "Verification request is no longer pending."
-            )
+        Allowed: PENDING -> APPROVED
+        """
+        if verification_request.status != VerificationRequestStatus.PENDING:
+            raise InvalidStateTransition("Verification request is no longer pending and cannot be approved.")
 
-        verification_request.status = (
-            VerificationRequestStatus.APPROVED
-        )
-
-        verification_request.user_consented_at = (
-            timezone.now()
-        )
-
-        verification_request.save(
-            update_fields=[
-                "status",
-                "user_consented_at",
-            ]
-        )
-
+        verification_request.status = VerificationRequestStatus.APPROVED
+        verification_request.user_consented_at = timezone.now()
+        verification_request.save(update_fields=["status", "user_consented_at"])  # atomic
         return verification_request
 
+    @staticmethod
+    @transaction.atomic
+    def deny_request(verification_request):
+        """Deny a pending verification request.
+
+        Allowed: PENDING -> DENIED
+        """
+        if verification_request.status != VerificationRequestStatus.PENDING:
+            raise InvalidStateTransition("Only pending requests can be denied.")
+
+        verification_request.status = VerificationRequestStatus.DENIED
+        verification_request.save(update_fields=["status"])  # atomic
+        return verification_request
 
     @staticmethod
     @transaction.atomic
-    def verify_request(
-        verification_request,
-        proof: dict,
-        public_signals: dict,
-    ):
+    def verify_request(verification_request, proof: dict, public_signals: dict):
+        """Verify a request using provided proof/public signals.
 
+        Allowed: APPROVED -> VERIFIED
+        """
         # Require explicit user consent first
-        if (
-            verification_request.status
-            != VerificationRequestStatus.APPROVED
-        ):
-            raise ValueError(
-                "User consent is required."
-            )
+        if verification_request.status != VerificationRequestStatus.APPROVED:
+            raise InvalidStateTransition("User consent is required before verification.")
 
         # Ensure credential is ACTIVE
         credential = verification_request.credential
         if hasattr(credential, 'status'):
             if credential.status != 'ACTIVE':
-                raise ValueError('Credential is not active.')
+                raise InvalidStateTransition('Credential is not active.')
         else:
             if not credential.is_active:
-                raise ValueError('Credential is not active.')
+                raise InvalidStateTransition('Credential is not active.')
 
         # Ensure challenge present and matches public_signals
         challenge = verification_request.challenge
@@ -117,11 +98,7 @@ class VerificationService:
 
         verified = False
         try:
-            verified = Verifier.verify_age_proof(
-                str(verification_request.id),
-                proof,
-                public_signals,
-            )
+            verified = Verifier.verify_age_proof(str(verification_request.id), proof, public_signals)
         except Exception as exc:
             raise ValueError(f'Cryptographic verification failed: {exc}') from exc
 
@@ -133,13 +110,6 @@ class VerificationService:
         verification_request.verified_at = timezone.now()
         verification_request.challenge = None
         verification_request.challenge_expires_at = None
-        verification_request.save(
-            update_fields=[
-                'status',
-                'verified_at',
-                'challenge',
-                'challenge_expires_at',
-            ]
-        )
+        verification_request.save(update_fields=['status', 'verified_at', 'challenge', 'challenge_expires_at'])
 
         return verification_request

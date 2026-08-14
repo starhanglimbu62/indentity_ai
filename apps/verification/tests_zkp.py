@@ -31,12 +31,16 @@ class ZKPIntegrationTests(TestCase):
         self.assertEqual(resp.status_code, 201)
         req_id = resp.data['id']
 
-        # Request a challenge
+        # Request a challenge (bank/staff should generate the challenge)
+        # create a staff user for the bank action
+        staff = User.objects.create_user(username='bankstaff', email='bankstaff@example.com', password='pass', is_staff=True)
+        self.client.force_authenticate(user=staff)
         ch = self.client.post(f'/api/verification/{req_id}/challenge/')
         self.assertEqual(ch.status_code, 200)
         challenge = ch.data['challenge']
 
-        # Approve (consent)
+        # Switch back to the holder (user) and approve (consent)
+        self.client.force_authenticate(user=self.user)
         approve = self.client.post(f'/api/verification/{req_id}/consent/')
         self.assertEqual(approve.status_code, 200)
 
@@ -54,6 +58,8 @@ class ZKPIntegrationTests(TestCase):
         public = proof_artifact.get('publicSignals', {})
         public['challenge'] = challenge
         public['verification_request_id'] = str(req_id)
+        # Ensure public current_ts is fresh and trusted by the server
+        public['current_ts'] = int(timezone.now().timestamp())
 
         # For environments without snarkjs, write precomputed artifact files for this request id so the verifier fallback can find them
         artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
@@ -63,6 +69,8 @@ class ZKPIntegrationTests(TestCase):
         with open(artifact_verified_path, 'w') as f:
             json.dump({'verified': True}, f)
 
+        # Submit proof as the bank (staff)
+        self.client.force_authenticate(user=staff)
         verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
             'proof': proof_artifact.get('proof'),
             'publicSignals': public,
@@ -89,10 +97,13 @@ class ZKPIntegrationTests(TestCase):
             'claim': 'AGE_OVER_18',
         }, format='json')
         req_id = resp.data['id']
+        # staff triggers challenge
+        staff = User.objects.create_user(username='bankstaff2', email='bankstaff2@example.com', password='pass', is_staff=True)
+        self.client.force_authenticate(user=staff)
         ch = self.client.post(f'/api/verification/{req_id}/challenge/')
         self.assertEqual(ch.status_code, 200)
-
-        # Approve
+        # restore user for consent
+        self.client.force_authenticate(user=self.user)
         self.client.post(f'/api/verification/{req_id}/consent/')
 
         # Load proof artifact and set wrong challenge
@@ -100,6 +111,8 @@ class ZKPIntegrationTests(TestCase):
         public = proof_artifact.get('publicSignals', {})
         public['challenge'] = 'wrong-challenge'
         public['verification_request_id'] = str(req_id)
+        # Ensure public current_ts is fresh to avoid timestamp window rejections
+        public['current_ts'] = int(timezone.now().timestamp())
 
         # Ensure verifier fallback has an artifact but mismatched challenge
         artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
@@ -134,6 +147,9 @@ class ZKPIntegrationTests(TestCase):
             'claim': 'AGE_OVER_18',
         }, format='json')
         req_id = resp.data['id']
+        # bank/staff must generate challenge
+        staff = User.objects.create_user(username='bankstaff_missingconsent', email='bankstaff_missingconsent@example.com', password='pass', is_staff=True)
+        self.client.force_authenticate(user=staff)
         ch = self.client.post(f'/api/verification/{req_id}/challenge/')
         self.assertEqual(ch.status_code, 200)
 
@@ -142,6 +158,8 @@ class ZKPIntegrationTests(TestCase):
         public = proof_artifact.get('publicSignals', {})
         public['challenge'] = ch.data['challenge']
         public['verification_request_id'] = str(req_id)
+        # Ensure public current_ts is fresh and trusted
+        public['current_ts'] = int(timezone.now().timestamp())
 
         # Create verifier artifacts for fallback
         artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
@@ -151,6 +169,8 @@ class ZKPIntegrationTests(TestCase):
         with open(artifact_verified_path, 'w') as f:
             json.dump({'verified': True}, f)
 
+        # submit proof as bank
+        self.client.force_authenticate(user=staff)
         verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
             'proof': proof_artifact.get('proof'),
             'publicSignals': public,
@@ -181,14 +201,21 @@ class ZKPIntegrationTests(TestCase):
         self.assertEqual(resp.status_code, 201)
         req_id = resp.data['id']
 
+        # staff triggers challenge
+        staff = User.objects.create_user(username='bankstaff3', email='bankstaff3@example.com', password='pass', is_staff=True)
+        self.client.force_authenticate(user=staff)
         ch = self.client.post(f'/api/verification/{req_id}/challenge/')
         self.assertEqual(ch.status_code, 200)
+        # restore user for consent
+        self.client.force_authenticate(user=self.user)
         self.client.post(f'/api/verification/{req_id}/consent/')
 
         proof_artifact = json.load(open(os.path.join(DOCS, 'proof_test-request.json')))
         public = proof_artifact.get('publicSignals', {})
         public['challenge'] = ch.data['challenge']
         public['verification_request_id'] = str(req_id)
+        # Ensure public current_ts is fresh and trusted
+        public['current_ts'] = int(timezone.now().timestamp())
 
         verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
             'proof': proof_artifact.get('proof'),

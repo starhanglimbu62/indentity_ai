@@ -1,16 +1,10 @@
 {
   "/_app": "pages/_app.js",
-  "/bank": "pages/bank.html",
-  "/credentials": "pages/credentials.html",
-  "/identity/upload": "pages/identity/upload.html",
-  "/": "pages/index.html",
-  "/register": "pages/register.html",
-  "/login": "pages/login.html",
-  "/requests": "pages/requests.html",
-  "/dashboard": "pages/dashboard.html",
-  "/verification/consent/[id]": "pages/verification/consent/[id].html",
-  "/verification/result/[id]": "pages/verification/result/[id].html",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/404": "pages/404.html"
+  "/": "pages/index.js",
+  "/dashboard": "pages/dashboard.js",
+  "/register": "pages/register.js",
+  "/login": "pages/login.js",
+  "/bank": "pages/bank.js"
 }
