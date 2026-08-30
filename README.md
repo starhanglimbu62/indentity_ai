@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Active%20Development-2563EB?style=for-the-badge" alt="Status"/>
-  <img src="https://img.shields.io/badge/Version-v0.2-0F172A?style=for-the-badge" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v0.4.2-0F172A?style=for-the-badge" alt="Version"/>
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
   <img src="https://img.shields.io/badge/Django-5.x-092E20?style=for-the-badge&logo=django&logoColor=white" alt="Django"/>
   <img src="https://img.shields.io/badge/Next.js-TypeScript-000000?style=for-the-badge&logo=next.js&logoColor=white" alt="Next.js"/>
@@ -363,9 +363,9 @@ IdentityAI/
 
 <div align="center">
 
-## V0.2 — KYC Document Processing
+## V0.4.2 — Privacy-Preserving Age Verification
 
-`ACTIVE DEVELOPMENT`
+`Consent-First · Zero-Knowledge Proofs · Minimal Disclosure`
 
 </div>
 
@@ -380,19 +380,41 @@ IdentityAI/
 * Bank verification prototype
 * Verification result
 
-### V0.2
+### V0.2 (KYC Document Processing)
 
 * Secure document upload
 * File validation
 * Temporary document processing
 * Image preprocessing
-* OCR
+* OCR abstraction
 * Identity extraction
 * Extracted-data validation
-* NIDMC abstraction
+* NIDMC verification boundary
 * Credential creation
 * Document deletion
-* Audit events
+* Audit event logging
+* Failure analysis and remediation guidance
+
+### V0.3 (Privacy-Preserving Verification)
+
+* Zero-knowledge proof infrastructure (Circom + SnarkJS)
+* AGE_OVER_18 claim circuit
+* Challenge-based proof generation
+* Proof verification and validation
+* Challenge expiration enforcement
+* Replay prevention
+* Explicit user consent enforcement
+
+### V0.4 (Bank Integration)
+
+* Bank registration and onboarding
+* Bank authentication (JWT)
+* Verification request lifecycle
+* Consent approval API
+* Proof submission endpoint
+* Minimal-disclosure verification results
+* Request expiry enforcement
+* Audit trail for verification flow
 
 ---
 
@@ -444,9 +466,9 @@ IdentityAI/
 | Version | Focus                           | Status |
 | ------- | ------------------------------- | ------ |
 | `V0.1`  | Core UI + verification flow     | ✅      |
-| `V0.2`  | KYC document processing         | 🚧     |
-| `V0.3`  | External identity verification  | ⏳      |
-| `V0.4`  | ZKP + credentials               | ⏳      |
+| `V0.2`  | KYC document processing         | ✅      |
+| `V0.3`  | Privacy-preserving ZKP flow     | ✅      |
+| `V0.4`  | Bank integration & lifecycle    | ✅      |
 | `V0.5`  | Bank integration + SDK          | ⏳      |
 | `V0.6`  | Production infrastructure       | ⏳      |
 | `V0.7`  | Distributed multi-bank platform | ⏳      |
