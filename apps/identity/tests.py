@@ -1,3 +1,5 @@
+import os
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -7,8 +9,10 @@ from apps.audit.models import AuditEvent
 from apps.identity.models import IdentityDocument, VerificationStatus, VerifiableCredential
 from apps.identity.services import IdentityService
 from apps.identity.services.credential import CredentialService
+from apps.identity.services.failure_analysis import IdentityFailureAnalysisService
 from apps.identity.services.nidmc import NIDMCService
 from apps.identity.services.ocr import OCRService
+from apps.identity.services.preprocessing import ImagePreprocessingService
 from apps.identity.services.validation import IdentityValidationService
 
 
@@ -149,6 +153,31 @@ class IdentityPipelineTests(TestCase):
 
         document.refresh_from_db()
         self.assertFalse(document.document_file.name)
+
+    def test_preprocessing_service_handles_invalid_images(self):
+        """Test that preprocessing gracefully handles non-image files."""
+        document = IdentityDocument.objects.create(
+            user=self.user,
+            document_file=SimpleUploadedFile("citizen.png", b"not-valid-png", content_type="image/png"),
+            document_type="CITIZENSHIP",
+        )
+
+        # Should gracefully fall back to original file when PIL can't process it
+        processed_path = ImagePreprocessingService.preprocess(document)
+
+        self.assertIsNotNone(processed_path)
+        self.assertTrue(os.path.exists(processed_path))
+
+    def test_failure_analysis_returns_actionable_recommendations(self):
+        analysis = IdentityFailureAnalysisService.analyze(
+            "NIDMC verification failed",
+            {"nid": "INVALIDNID", "confidence": 0.61},
+        )
+
+        self.assertIn("reason", analysis)
+        self.assertIn("recommendation", analysis)
+        self.assertIn("recoverable", analysis)
+        self.assertFalse(analysis["recoverable"])
 
     def test_audit_event_creation(self):
         document = IdentityDocument.objects.create(

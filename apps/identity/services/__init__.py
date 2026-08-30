@@ -7,6 +7,7 @@ from apps.identity.models import IdentityDocument, VerifiableCredential, Verific
 from .credential import CredentialService
 from .document_handling import DocumentHandlingService
 from .extraction import IdentityExtractionService
+from .failure_analysis import IdentityFailureAnalysisService
 from .nidmc import NIDMCService
 from .ocr import OCRService
 from .preprocessing import ImagePreprocessingService
@@ -73,15 +74,22 @@ class IdentityService:
                     "processed_at",
                 ]
             )
+            failure_analysis = IdentityFailureAnalysisService.analyze(
+                "NIDMC verification failed",
+                {
+                    "nid": validated["nid"],
+                    "confidence": validated.get("confidence", 0.0),
+                },
+            )
             AuditService.record_event(
                 user=document.user,
                 event_type="IDENTITY_VERIFICATION_FAILED",
                 entity_type="identity_document",
                 entity_id=document.id,
-                metadata={"reason": "NIDMC verification failed"},
+                metadata=failure_analysis,
             )
             DocumentHandlingService.delete_raw_document(document)
-            raise ValueError("Identity verification failed.")
+            raise ValueError(failure_analysis["recommendation"])
 
         document.extracted_nid = validated["nid"]
         document.extracted_name = validated["name"]
