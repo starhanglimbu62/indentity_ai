@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Layout from '../../../src/components/Layout'
 import { verifyRequest } from '../../../src/api/api'
 
@@ -10,18 +10,18 @@ export default function ResultPage() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<any | null>(null)
 
-  const fetchVerify = async () => {
+  const fetchVerify = useCallback(async () => {
     if (!id) return
     setLoading(true)
     try {
-      const res = await verifyRequest(String(id))
+      const res = await verifyRequest(String(id), null, null)
       setResult(res)
     } catch (err: any) {
       setError(err?.data || 'Verification failed')
     } finally { setLoading(false) }
-  }
+  }, [id])
 
-  useEffect(() => { fetchVerify() }, [id])
+  useEffect(() => { fetchVerify() }, [fetchVerify])
 
   return (
     <Layout>

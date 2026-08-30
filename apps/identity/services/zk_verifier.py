@@ -5,15 +5,30 @@ from datetime import datetime
 
 NODE_VERIFIER = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs', 'verifier.js')
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs')
-VK_PATH = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs', 'age_over_18_vk.json')
+VK_PATH = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs', 'zk_build', 'age_over_18_vk.json')
 
 
-def _call_node_verifier(proof: dict, public_signals: dict) -> bool:
+def _as_public_signals_array(public_signals):
+    if isinstance(public_signals, list):
+        return [str(v) for v in public_signals]
+
+    if isinstance(public_signals, dict):
+        return [
+            str(public_signals.get('current_ts', '')),
+            str(public_signals.get('verification_request_id', '')),
+            str(public_signals.get('claim_id', '')),
+            str(public_signals.get('challenge', '')),
+        ]
+
+    return [str(public_signals)]
+
+
+def _call_node_verifier(proof: dict, public_signals) -> bool:
     node_script = NODE_VERIFIER
     if not os.path.exists(node_script):
         raise FileNotFoundError("Node verifier helper not found")
 
-    payload = {"proof": proof, "publicSignals": public_signals}
+    payload = {"proof": proof, "publicSignals": _as_public_signals_array(public_signals)}
     proc = subprocess.run(["node", node_script], input=json.dumps(payload).encode(), capture_output=True)
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr)

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 from django.utils import timezone
@@ -61,5 +63,17 @@ class VerificationSecurityTests(TestCase):
         VerificationService.deny_request(req)
         self.assertEqual(req.status, VerificationRequestStatus.DENIED)
         # Attempt to verify should raise InvalidStateTransition
+        with self.assertRaises(InvalidStateTransition):
+            VerificationService.verify_request(req, proof={}, public_signals={})
+
+    def test_expired_credential_cannot_be_verified(self):
+        req = VerificationService.create_request(bank=self.bank, user=self.user_b, credential=self.cred_b, claim='AGE_OVER_18')
+        self.cred_b.expires_at = timezone.now() - timedelta(days=1)
+        self.cred_b.status = 'ACTIVE'
+        self.cred_b.save(update_fields=['expires_at', 'status'])
+        req.status = VerificationRequestStatus.APPROVED
+        req.user_consented_at = timezone.now()
+        req.save(update_fields=['status', 'user_consented_at'])
+
         with self.assertRaises(InvalidStateTransition):
             VerificationService.verify_request(req, proof={}, public_signals={})

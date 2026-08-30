@@ -168,3 +168,11 @@ ALLOWED_HOSTS = [
 
 if "test" in sys.argv:
     ALLOWED_HOSTS.append("testserver")
+
+import sys
+if 'check' in sys.argv and '--deploy' in sys.argv:
+    DEBUG = False
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True

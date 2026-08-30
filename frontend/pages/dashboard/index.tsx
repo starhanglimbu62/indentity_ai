@@ -9,9 +9,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     // read token to ensure logged in
-    const t = localStorage.getItem('access')
-    if (!t) router.push('/login')
-  }, [])
+    if (typeof window !== 'undefined') {
+      const t = localStorage.getItem('access')
+      if (!t) router.push('/login')
+    }
+  }, [router])
 
   return (
     <Layout>

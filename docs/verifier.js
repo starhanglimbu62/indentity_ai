@@ -39,20 +39,28 @@ function readStdin() {
     }
 
     // Otherwise, attempt to verify using snarkjs and the verification key
-    const vkPath = './docs/age_over_18_vk.json';
+    const vkPath = './docs/zk_build/age_over_18_vk.json';
+    const fallbackVkPath = './docs/age_over_18_vk.json';
     const proofPath = './docs/proof.json';
     const publicPath = './docs/public.json';
     fs.writeFileSync(proofPath, JSON.stringify(proof));
-    fs.writeFileSync(publicPath, JSON.stringify(normalizedSignals));
+    fs.writeFileSync(publicPath, JSON.stringify(Array.isArray(publicSignals) ? publicSignals : [
+      String(normalizedSignals.current_ts ?? ''),
+      String(normalizedSignals.verification_request_id ?? ''),
+      String(normalizedSignals.claim_id ?? ''),
+      String(normalizedSignals.challenge ?? ''),
+    ]));
 
-    if (!fs.existsSync(vkPath)) {
+    const actualVkPath = fs.existsSync(vkPath) ? vkPath : (fs.existsSync(fallbackVkPath) ? fallbackVkPath : null);
+    if (!actualVkPath) {
       console.error('verification key missing');
       process.exit(2);
     }
 
-    const verify = spawnSync('snarkjs', ['plonk', 'verify', vkPath, publicPath, proofPath], { encoding: 'utf8' });
+    const snarkjsCli = require.resolve('snarkjs');
+    const verify = spawnSync('node', [snarkjsCli, 'plonk', 'verify', actualVkPath, publicPath, proofPath], { encoding: 'utf8' });
     if (verify.status !== 0) {
-      console.error('snarkjs verify failed', verify.stderr);
+      console.error('snarkjs verify failed', verify.stderr || verify.stdout);
       process.exit(3);
     }
 

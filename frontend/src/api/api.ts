@@ -150,7 +150,7 @@ export type RegisterResponse = {
   refresh: string;
 };
 
-export default {
+const api = {
   request,
   login,
   register,
@@ -159,4 +159,6 @@ export default {
   consentRequest,
   verifyRequest,
 };
+
+export default api;
 

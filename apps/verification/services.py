@@ -1,3 +1,5 @@
+import json
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -7,6 +9,33 @@ from .models import (
 )
 
 from apps.common.exceptions import InvalidStateTransition
+from apps.identity.services.zk_challenge import encode_challenge
+
+
+def _normalize_public_signals(public_signals):
+    """Accept both dict-shaped and SnarkJS array-shaped publicSignals payloads."""
+    if isinstance(public_signals, dict):
+        return public_signals
+
+    if isinstance(public_signals, list):
+        if len(public_signals) < 4:
+            raise ValueError('Public signals list must include current_ts, verification_request_id, claim_id, and challenge.')
+
+        return {
+            'current_ts': public_signals[0],
+            'verification_request_id': public_signals[1],
+            'claim_id': public_signals[2],
+            'challenge': public_signals[3],
+        }
+
+    if isinstance(public_signals, str):
+        try:
+            parsed = json.loads(public_signals)
+            return _normalize_public_signals(parsed)
+        except (TypeError, ValueError):
+            pass
+
+    raise ValueError('Public signals must be a mapping or a list.')
 
 
 class VerificationService:
@@ -58,25 +87,35 @@ class VerificationService:
         if verification_request.status != VerificationRequestStatus.APPROVED:
             raise InvalidStateTransition("User consent is required before verification.")
 
-        # Ensure credential is ACTIVE
+        # Ensure credential is active and not expired.
         credential = verification_request.credential
         if hasattr(credential, 'status'):
+            if credential.status == 'EXPIRED':
+                raise InvalidStateTransition('Credential is expired.')
             if credential.status != 'ACTIVE':
                 raise InvalidStateTransition('Credential is not active.')
         else:
             if not credential.is_active:
                 raise InvalidStateTransition('Credential is not active.')
 
+        expires_at = getattr(credential, 'expires_at', None)
+        if expires_at is not None and timezone.now() >= expires_at:
+            if hasattr(credential, 'status'):
+                credential.status = 'EXPIRED'
+                credential.save(update_fields=['status'])
+            raise InvalidStateTransition('Credential is expired.')
+
         # Ensure challenge present and matches public_signals
         challenge = verification_request.challenge
         expires_at = verification_request.challenge_expires_at
-        if not isinstance(public_signals, dict):
-            raise ValueError('Public signals must be a mapping.')
+        public_signals = _normalize_public_signals(public_signals)
 
         sent_challenge = public_signals.get('challenge')
         if not challenge or not sent_challenge:
             raise ValueError('Challenge is missing.')
-        if challenge != sent_challenge:
+
+        expected_challenges = {str(challenge), str(encode_challenge(challenge))}
+        if str(sent_challenge) not in expected_challenges:
             raise ValueError('Challenge does not match verification request.')
         if expires_at and timezone.now() > expires_at:
             raise ValueError('Challenge expired.')
@@ -93,12 +132,20 @@ class VerificationService:
         if abs(current_ts_value - now_ts) > 300:
             raise ValueError('Current timestamp is not trusted or is outside the allowed verification window.')
 
-        # Verify proof cryptographically using the ZK verifier boundary
+        # Verify proof cryptographically using the ZK verifier boundary.
+        # Keep the list-shaped public signals for the snarkjs verifier, while using the dict form
+        # only for challenge/current_ts validation above.
         from apps.identity.services.zk_verifier import Verifier
 
         verified = False
         try:
-            verified = Verifier.verify_age_proof(str(verification_request.id), proof, public_signals)
+            verifier_payload = public_signals if isinstance(public_signals, list) else [
+                str(public_signals.get('current_ts', '')),
+                str(public_signals.get('verification_request_id', '')),
+                str(public_signals.get('claim_id', '')),
+                str(public_signals.get('challenge', '')),
+            ]
+            verified = Verifier.verify_age_proof(str(verification_request.id), proof, verifier_payload)
         except Exception as exc:
             raise ValueError(f'Cryptographic verification failed: {exc}') from exc
 

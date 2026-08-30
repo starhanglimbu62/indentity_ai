@@ -5,9 +5,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const router = useRouter()
 
   useEffect(() => {
-    const token = localStorage.getItem('access')
-    if (!token) router.push('/login')
-  }, [])
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('access')
+      if (!token) router.push('/login')
+    }
+  }, [router])
 
   return <>{children}</>
 }

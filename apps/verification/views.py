@@ -10,7 +10,7 @@ from apps.accounts.models import User
 
 from .services import VerificationService
 from .models import VerificationRequest
-from .serializers import VerificationRequestSerializer
+from .serializers import VerificationRequestSerializer, VerifyProofSerializer
 
 
 class CreateVerificationRequestView(APIView):
@@ -141,11 +141,12 @@ class VerifyRequestView(APIView):
         if not verification_request:
             return Response({"error": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        proof = request.data.get('proof')
-        public_signals = request.data.get('publicSignals')
+        serializer = VerifyProofSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not proof or not public_signals:
-            return Response({"error": "proof and publicSignals are required."}, status=status.HTTP_400_BAD_REQUEST)
+        proof = serializer.validated_data['proof']
+        public_signals = serializer.validated_data['publicSignals']
 
         try:
             VerificationService.verify_request(

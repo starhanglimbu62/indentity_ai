@@ -34,7 +34,9 @@ Tests the core backend flow without the frontend:
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -200,9 +202,25 @@ def cleanup() -> None:
 # Main
 # ================================================================
 
+def ensure_snarkjs_available() -> None:
+    try:
+        result = subprocess.run("snarkjs --help", shell=True, capture_output=True, text=True)
+    except OSError as exc:
+        raise RuntimeError(f"snarkjs is not available on PATH: {exc}") from exc
+
+    stdout = result.stdout or ""
+    output = stdout + (result.stderr or "")
+    if result.returncode == 0 or "snarkjs" in stdout.lower() or "Usage:" in output or "Full Command" in output or "snarkjs@" in output:
+        return
+
+    raise RuntimeError(f"snarkjs --help failed: {output or result.stderr or result.stdout}")
+
+
 def main() -> int:
 
     global PASSED, FAILED
+
+    ensure_snarkjs_available()
 
     print()
     print("=" * 70)
@@ -578,6 +596,8 @@ def main() -> int:
 
     proof = proof_bundle.get("proof")
     public_signals = proof_bundle.get("publicSignals")
+    if isinstance(public_signals, str):
+        public_signals = json.loads(public_signals)
 
     record_test(
         "Proof generated",
