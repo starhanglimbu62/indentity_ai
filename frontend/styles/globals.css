@@ -2,10 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 html, body, #__next {
   height: 100%;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: 'DM Sans', sans-serif;
+  background-image: radial-gradient(circle at 10% 0%, rgba(224, 231, 255, 0.7), transparent 30rem);
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+button, input {
+  font: inherit;
 }

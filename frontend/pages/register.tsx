@@ -356,7 +356,7 @@ export default function Register() {
             <button
               type="button"
               onClick={() => router.push("/login")}
-              className="font-medium text-indigo-600 hover:text-indigo-700"
+              className="font-semibold text-indigo-600 hover:text-indigo-700"
             >
               Sign in
             </button>

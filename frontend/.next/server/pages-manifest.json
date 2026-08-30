@@ -3,5 +3,11 @@
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
   "/": "pages/index.js",
-  "/register": "pages/register.js"
+  "/register": "pages/register.js",
+  "/identity/upload": "pages/identity/upload.js",
+  "/credentials": "pages/credentials.js",
+  "/dashboard": "pages/dashboard.js",
+  "/requests": "pages/requests.js",
+  "/bank": "pages/bank.js",
+  "/verification/consent/[id]": "pages/verification/consent/[id].js"
 }

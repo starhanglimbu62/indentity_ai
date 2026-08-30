@@ -8,13 +8,14 @@ export default function Requests() {
 
   return (
     <Layout>
-      <div className="max-w-md mx-auto bg-white p-6 rounded shadow">
-        <h2 className="text-xl font-semibold">Pending Requests</h2>
-        <p className="mt-2 text-gray-600">If you have a request UUID (provided by a bank), paste it here to view and consent.</p>
-        <div className="mt-4">
-          <input value={requestId} onChange={e => setRequestId(e.target.value)} placeholder="Request UUID" className="w-full border px-3 py-2 rounded" />
+      <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Review access</p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">Pending requests</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-500">Enter the request ID provided by a bank to review the verification request and give consent.</p>
+        <div className="mt-8">
+          <label className="block text-sm font-semibold text-slate-700">Request ID<input value={requestId} onChange={e => setRequestId(e.target.value)} placeholder="Paste request UUID" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" /></label>
           <div className="mt-3 flex gap-2">
-            <button onClick={() => router.push(`/verification/consent/${requestId}`)} className="px-4 py-2 bg-indigo-600 text-white rounded">Open</button>
+            <button disabled={!requestId.trim()} onClick={() => router.push(`/verification/consent/${requestId}`)} className="rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Review request</button>
           </div>
         </div>
       </div>
