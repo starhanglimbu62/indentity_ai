@@ -15,6 +15,11 @@ urlpatterns = [
     ),
 
     path(
+        "api/banks/",
+        include("apps.banks.urls")
+    ),
+
+    path(
         "api/identity/",
         include("apps.identity.urls")
     ),

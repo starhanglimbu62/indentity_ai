@@ -8,7 +8,7 @@ export default function Dashboard() {
   useEffect(() => {
     // read token to ensure logged in
     if (typeof window !== 'undefined') {
-      const t = localStorage.getItem('access')
+      const t = sessionStorage.getItem('access')
       if (!t) router.push('/login')
     }
   }, [router])

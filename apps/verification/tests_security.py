@@ -77,3 +77,13 @@ class VerificationSecurityTests(TestCase):
 
         with self.assertRaises(InvalidStateTransition):
             VerificationService.verify_request(req, proof={}, public_signals={})
+
+    def test_expired_request_cannot_be_verified(self):
+        req = VerificationService.create_request(bank=self.bank, user=self.user_b, credential=self.cred_b, claim='AGE_OVER_18')
+        req.status = VerificationRequestStatus.APPROVED
+        req.user_consented_at = timezone.now()
+        req.expires_at = timezone.now() - timedelta(minutes=1)
+        req.save(update_fields=['status', 'user_consented_at', 'expires_at'])
+
+        with self.assertRaises(InvalidStateTransition):
+            VerificationService.verify_request(req, proof={}, public_signals={})

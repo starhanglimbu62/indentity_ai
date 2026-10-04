@@ -7,6 +7,13 @@ User = get_user_model()
 
 class RegisterSerializer(serializers.ModelSerializer):
 
+    legal_name = serializers.CharField(
+        source="first_name",
+        write_only=True,
+        required=True,
+        max_length=150,
+    )
+
     password = serializers.CharField(
         write_only=True,
         min_length=8,
@@ -23,6 +30,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
 
         fields = [
+            "legal_name",
             "username",
             "email",
             "password",
@@ -41,6 +49,21 @@ class RegisterSerializer(serializers.ModelSerializer):
         if len(value) < 3:
             raise serializers.ValidationError(
                 "Username must contain at least 3 characters."
+            )
+
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError(
+                "An account with this username already exists."
+            )
+
+        return value
+
+    def validate_legal_name(self, value):
+        value = " ".join(value.split())
+
+        if not value:
+            raise serializers.ValidationError(
+                "Legal name is required."
             )
 
         return value

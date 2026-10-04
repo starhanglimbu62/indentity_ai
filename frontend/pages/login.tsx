@@ -17,7 +17,7 @@ export default function Login() {
     setError(null)
     setLoading(true)
     try {
-      const resp: any = await login({ username, password })
+      const resp: any = await login({ username: username.trim(), password })
       if (resp && resp.access) {
         setToken(resp.access)
         router.push('/dashboard')

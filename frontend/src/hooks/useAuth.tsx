@@ -11,13 +11,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [token, setTokenState] = useState<string | null>(null)
 
   useEffect(() => {
-    const t = localStorage.getItem('access')
+    const t = sessionStorage.getItem('access')
     if (t) setTokenState(t)
   }, [])
 
   const setToken = (t: string | null) => {
-    if (t) localStorage.setItem('access', t)
-    else localStorage.removeItem('access')
+    if (t) sessionStorage.setItem('access', t)
+    else sessionStorage.removeItem('access')
     setTokenState(t)
   }
 

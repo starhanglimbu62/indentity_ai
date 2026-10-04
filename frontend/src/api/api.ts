@@ -7,6 +7,7 @@ type RequestOptions = RequestInit & {
 };
 
 export type RegisterPayload = {
+  legal_name: string;
   username: string;
   email: string;
   password: string;
@@ -45,7 +46,7 @@ async function request<T>(
   }
 
   if (auth && typeof window !== "undefined") {
-    const token = localStorage.getItem("access");
+    const token = sessionStorage.getItem("access");
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;

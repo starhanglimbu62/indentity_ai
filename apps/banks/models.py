@@ -22,7 +22,15 @@ class Bank(models.Model):
 
     api_key = models.CharField(
         max_length=255,
-        unique=True
+        unique=True,
+        blank=True,
+        default=""
+    )
+
+    webhook_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
     )
 
     is_active = models.BooleanField(
@@ -32,6 +40,11 @@ class Bank(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+
+    def save(self, *args, **kwargs):
+        if not self.api_key:
+            self.api_key = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name

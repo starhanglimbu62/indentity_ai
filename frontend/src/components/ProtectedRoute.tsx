@@ -6,7 +6,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('access')
+      const token = sessionStorage.getItem('access')
       if (!token) router.push('/login')
     }
   }, [router])

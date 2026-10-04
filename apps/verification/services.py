@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -8,6 +9,7 @@ from .models import (
     VerificationRequestStatus,
 )
 
+from apps.audit.services import AuditService
 from apps.common.exceptions import InvalidStateTransition
 from apps.identity.services.zk_challenge import encode_challenge
 
@@ -44,7 +46,20 @@ class VerificationService:
     @transaction.atomic
     def create_request(bank, user, credential, claim):
         """Create a verification request. Caller must ensure caller identity/permissions."""
-        request = VerificationRequest.objects.create(bank=bank, user=user, credential=credential, claim=claim)
+        request = VerificationRequest.objects.create(
+            bank=bank,
+            user=user,
+            credential=credential,
+            claim=claim,
+            expires_at=timezone.now() + timedelta(days=7),
+        )
+        AuditService.record_event(
+            user=user,
+            event_type="VERIFICATION_REQUEST_CREATED",
+            entity_type="verification_request",
+            entity_id=request.id,
+            metadata={"bank_code": bank.bank_code, "claim": claim},
+        )
         return request
 
     @staticmethod
@@ -54,12 +69,24 @@ class VerificationService:
 
         Allowed: PENDING -> APPROVED
         """
+        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
+            verification_request.status = VerificationRequestStatus.EXPIRED
+            verification_request.save(update_fields=["status"])
+            raise InvalidStateTransition("Verification request has expired.")
+
         if verification_request.status != VerificationRequestStatus.PENDING:
             raise InvalidStateTransition("Verification request is no longer pending and cannot be approved.")
 
         verification_request.status = VerificationRequestStatus.APPROVED
         verification_request.user_consented_at = timezone.now()
         verification_request.save(update_fields=["status", "user_consented_at"])  # atomic
+        AuditService.record_event(
+            user=verification_request.user,
+            event_type="VERIFICATION_REQUEST_APPROVED",
+            entity_type="verification_request",
+            entity_id=verification_request.id,
+            metadata={"claim": verification_request.claim},
+        )
         return verification_request
 
     @staticmethod
@@ -69,6 +96,11 @@ class VerificationService:
 
         Allowed: PENDING -> DENIED
         """
+        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
+            verification_request.status = VerificationRequestStatus.EXPIRED
+            verification_request.save(update_fields=["status"])
+            raise InvalidStateTransition("Verification request has expired.")
+
         if verification_request.status != VerificationRequestStatus.PENDING:
             raise InvalidStateTransition("Only pending requests can be denied.")
 
@@ -83,6 +115,11 @@ class VerificationService:
 
         Allowed: APPROVED -> VERIFIED
         """
+        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
+            verification_request.status = VerificationRequestStatus.EXPIRED
+            verification_request.save(update_fields=["status"])
+            raise InvalidStateTransition("Verification request has expired.")
+
         # Require explicit user consent first
         if verification_request.status != VerificationRequestStatus.APPROVED:
             raise InvalidStateTransition("User consent is required before verification.")
@@ -158,5 +195,13 @@ class VerificationService:
         verification_request.challenge = None
         verification_request.challenge_expires_at = None
         verification_request.save(update_fields=['status', 'verified_at', 'challenge', 'challenge_expires_at'])
+
+        AuditService.record_event(
+            user=verification_request.user,
+            event_type="VERIFICATION_REQUEST_VERIFIED",
+            entity_type="verification_request",
+            entity_id=verification_request.id,
+            metadata={"claim": verification_request.claim, "verification_id": str(verification_request.id)},
+        )
 
         return verification_request

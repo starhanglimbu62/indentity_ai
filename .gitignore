@@ -2,6 +2,10 @@
 node_modules/
 frontend/node_modules/
 
+.env
+.env.*
+!.env.example
+
 # Private AI agent configuration
 .github/
 .agent/

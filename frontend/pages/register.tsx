@@ -6,6 +6,7 @@ import { register } from "../src/api/api";
 import { useAuth } from "../src/hooks/useAuth";
 
 type FormErrors = {
+  legal_name?: string;
   username?: string;
   email?: string;
   phone_number?: string;
@@ -65,6 +66,7 @@ export default function Register() {
   const { setToken } = useAuth();
 
   const [username, setUsername] = useState("");
+  const [legalName, setLegalName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +79,12 @@ export default function Register() {
     const nextErrors: FormErrors = {};
 
     const cleanUsername = username.trim();
+    const cleanLegalName = legalName.trim().replace(/\s+/g, " ");
     const cleanEmail = email.trim();
+
+    if (!cleanLegalName) {
+      nextErrors.legal_name = "Legal name is required.";
+    }
 
     if (!cleanUsername) {
       nextErrors.username = "Username is required.";
@@ -137,6 +144,7 @@ export default function Register() {
 
     try {
       const response = await register({
+        legal_name: legalName.trim().replace(/\s+/g, " "),
         username: username.trim(),
         email: email.trim().toLowerCase(),
         password,
@@ -197,6 +205,33 @@ export default function Register() {
             className="space-y-5"
             noValidate
           >
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Legal name
+              </label>
+
+              <p className="mb-2 text-sm text-slate-500">
+                Enter your legal name exactly as it appears on your identity document. This name will be used for KYC verification.
+              </p>
+
+              <input
+                type="text"
+                value={legalName}
+                onChange={(event) => setLegalName(event.target.value)}
+                autoComplete="name"
+                disabled={loading}
+                className={`w-full rounded-lg border px-4 py-3 outline-none transition ${
+                  errors.legal_name
+                    ? "border-red-400 focus:ring-2 focus:ring-red-100"
+                    : "border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                }`}
+              />
+
+              {errors.legal_name && (
+                <p className="mt-1 text-sm text-red-600">{errors.legal_name}</p>
+              )}
+            </div>
+
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
                 Username
