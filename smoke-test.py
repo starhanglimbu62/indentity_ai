@@ -249,6 +249,7 @@ def main() -> int:
     response = client.post(
         "/api/accounts/register/",
         {
+            "legal_name": "Smoke Test User",
             "username": TEST_USERNAME,
             "email": TEST_EMAIL,
             "password": "StrongPassword123!",
@@ -705,6 +706,7 @@ def main() -> int:
     attacker_response = attacker_client.post(
         "/api/accounts/register/",
         {
+            "legal_name": "Attacker User",
             "username": ATTACKER_USERNAME,
             "email": ATTACKER_EMAIL,
             "password": "StrongPassword123!",

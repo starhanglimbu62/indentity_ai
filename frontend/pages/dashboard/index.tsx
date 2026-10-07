@@ -1,17 +1,58 @@
 import Layout from '../../src/components/Layout'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
+import api from '../../src/api/api'
 
 export default function Dashboard() {
   const router = useRouter()
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [requests, setRequests] = useState<any[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(true)
+  const [requestsLoading, setRequestsLoading] = useState(true)
 
   useEffect(() => {
-    // read token to ensure logged in
     if (typeof window !== 'undefined') {
       const t = sessionStorage.getItem('access')
       if (!t) router.push('/login')
     }
   }, [router])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const notifData = await api.getNotifications() as any[]
+        setNotifications(notifData)
+      } catch (err) {
+        console.error('Failed to fetch notifications')
+      } finally {
+        setNotificationsLoading(false)
+      }
+    }
+
+    if (typeof window !== 'undefined' && sessionStorage.getItem('access')) {
+      fetchData()
+    }
+  }, [])
+
+  useEffect(() => {
+    const fetchRequests = async () => {
+      try {
+        const reqData = await api.getVerificationRequests() as any[]
+        setRequests(reqData)
+      } catch (err) {
+        console.error('Failed to fetch requests')
+      } finally {
+        setRequestsLoading(false)
+      }
+    }
+
+    if (typeof window !== 'undefined' && sessionStorage.getItem('access')) {
+      fetchRequests()
+    }
+  }, [])
+
+  const pendingNotifications = notifications.filter(n => !n.is_read).length
+  const pendingRequests = requests.filter(r => r.status === 'PENDING').length
 
   return (
     <Layout>
@@ -33,7 +74,7 @@ export default function Dashboard() {
             {[
               { title: 'Upload document', detail: 'Start your verification', href: '/identity/upload', accent: 'bg-indigo-50 text-indigo-700' },
               { title: 'My credentials', detail: 'View verified credentials', href: '/credentials', accent: 'bg-emerald-50 text-emerald-700' },
-              { title: 'Pending requests', detail: 'Review bank requests', href: '/requests', accent: 'bg-amber-50 text-amber-700' },
+              { title: 'Notifications', detail: pendingNotifications > 0 ? `${pendingNotifications} new` : 'No new alerts', href: '/dashboard/notifications', accent: pendingNotifications > 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700' },
               { title: 'Bank portal', detail: 'Create a verification request', href: '/bank', accent: 'bg-slate-100 text-slate-700' },
             ].map((action) => (
               <button key={action.href} onClick={() => router.push(action.href)} className="group rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
@@ -45,7 +86,40 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
+
+        {!requestsLoading && requests.length > 0 && (
+          <section>
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Pending requests</h2>
+                <p className="mt-1 text-sm text-slate-500">Banks requesting your verification</p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3">
+              {requests.filter(r => r.status === 'PENDING').slice(0, 3).map((req) => (
+                <div key={req.id} className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-200 transition">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-slate-900">{req.bank?.name}</p>
+                      <p className="mt-1 text-sm text-slate-600">Claiming: <span className="font-mono text-indigo-600">{req.claim}</span></p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {new Date(req.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => router.push(`/verification/consent/${req.id}`)}
+                      className="whitespace-nowrap rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                    >
+                      Review
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </Layout>
   )
 }
+

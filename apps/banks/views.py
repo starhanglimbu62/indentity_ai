@@ -1,6 +1,6 @@
 from django.db import transaction
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -66,3 +66,28 @@ class BankLoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class BankGetInfoView(APIView):
+    """Get current bank info based on bank API key from header."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        api_key = request.headers.get('X-Bank-API-Key', '')
+        
+        if not api_key:
+            return Response({"error": "X-Bank-API-Key header is required."}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        bank = Bank.objects.filter(api_key=api_key, is_active=True).first()
+        
+        if not bank:
+            return Response({"error": "Invalid bank API key."}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        return Response({
+            "id": str(bank.id),
+            "name": bank.name,
+            "bank_code": bank.bank_code,
+            "api_key": bank.api_key,
+            "webhook_url": bank.webhook_url,
+            "is_active": bank.is_active,
+        })

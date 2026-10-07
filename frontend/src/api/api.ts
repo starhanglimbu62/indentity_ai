@@ -126,10 +126,83 @@ export async function createVerificationRequest(payload: {
   });
 }
 
-export async function consentRequest(id: string) {
+export async function consentRequest(id: string, approved: boolean = true) {
   return request(`/api/verification/${id}/consent/`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approved }),
     auth: true,
+  });
+}
+
+export async function denyRequest(id: string) {
+  return consentRequest(id, false);
+}
+
+export async function getNotifications() {
+  return request("/api/verification/notifications/", {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function markNotificationAsRead(id: string) {
+  return request(`/api/verification/notifications/${id}/read/`, {
+    method: "POST",
+    auth: true,
+  });
+}
+
+export async function getVerificationRequests() {
+  return request("/api/verification/requests/", {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function getVerificationRequest(id: string) {
+  return request(`/api/verification/requests/${id}/`, {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function searchUsers(query: string) {
+  return request(`/api/verification/search-users/?q=${encodeURIComponent(query)}`, {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function getBankRequests() {
+  return request("/api/verification/bank-requests/", {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function getBankRequestDetail(id: string) {
+  return request(`/api/verification/bank-requests/${id}/`, {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function bankLogin(payload: {
+  bank_code: string;
+  api_key: string;
+}) {
+  return request("/api/banks/login/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getBankInfo(apiKey: string) {
+  return request("/api/banks/info/", {
+    method: "GET",
+    headers: { "X-Bank-API-Key": apiKey },
   });
 }
 
@@ -158,6 +231,16 @@ const api = {
   uploadIdentity,
   createVerificationRequest,
   consentRequest,
+  denyRequest,
+  getNotifications,
+  markNotificationAsRead,
+  getVerificationRequests,
+  getVerificationRequest,
+  searchUsers,
+  getBankRequests,
+  getBankRequestDetail,
+  bankLogin,
+  getBankInfo,
   verifyRequest,
 };
 

@@ -15,6 +15,53 @@ class VerificationRequestStatus(models.TextChoices):
     EXPIRED = "EXPIRED", "Expired"
 
 
+class NotificationType(models.TextChoices):
+    VERIFICATION_REQUEST = "VERIFICATION_REQUEST", "Verification Request"
+    VERIFICATION_APPROVED = "VERIFICATION_APPROVED", "Verification Approved"
+    VERIFICATION_DENIED = "VERIFICATION_DENIED", "Verification Denied"
+    VERIFICATION_RESULT = "VERIFICATION_RESULT", "Verification Result"
+
+
+class Notification(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications"
+    )
+
+    notification_type = models.CharField(
+        max_length=50,
+        choices=NotificationType.choices,
+        default=NotificationType.VERIFICATION_REQUEST
+    )
+
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+
+    verification_request = models.ForeignKey(
+        'VerificationRequest',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="notifications"
+    )
+
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.notification_type} for {self.user.username}"
+
+
 class VerificationRequest(models.Model):
 
     id = models.UUIDField(

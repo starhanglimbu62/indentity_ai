@@ -60,6 +60,17 @@ class VerificationService:
             entity_id=request.id,
             metadata={"bank_code": bank.bank_code, "claim": claim},
         )
+        
+        # Create notification for the user
+        from .models import Notification, NotificationType
+        Notification.objects.create(
+            user=user,
+            notification_type=NotificationType.VERIFICATION_REQUEST,
+            title="Identity verification request",
+            message=f"{bank.name} is requesting verification that you are over 18.",
+            verification_request=request,
+        )
+        
         return request
 
     @staticmethod
@@ -106,6 +117,15 @@ class VerificationService:
 
         verification_request.status = VerificationRequestStatus.DENIED
         verification_request.save(update_fields=["status"])  # atomic
+        
+        AuditService.record_event(
+            user=verification_request.user,
+            event_type="VERIFICATION_REQUEST_DENIED",
+            entity_type="verification_request",
+            entity_id=verification_request.id,
+            metadata={"claim": verification_request.claim},
+        )
+        
         return verification_request
 
     @staticmethod

@@ -1,48 +1,66 @@
 import Layout from '../../src/components/Layout'
-import { useState } from 'react'
-import { createVerificationRequest } from '../../src/api/api'
+import { useRouter } from 'next/router'
+import { useEffect } from 'react'
 
 export default function BankPortal() {
-  const [bankCode, setBankCode] = useState('')
-  const [userId, setUserId] = useState('')
-  const [claim, setClaim] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
-  const submit = async (e: any) => {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
-    try {
-      const res = await createVerificationRequest({ bank_code: bankCode, user_id: userId, claim })
-      setResult(res)
-    } catch (err: any) {
-      setError(err?.data || 'Request failed')
-    } finally { setLoading(false) }
-  }
+  useEffect(() => {
+    const bank = typeof window !== 'undefined' ? sessionStorage.getItem('bank') : null
+    if (bank) {
+      router.push('/bank/dashboard')
+    }
+  }, [router])
 
   return (
     <Layout>
-      <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Bank workspace</p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Create a verification request</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">Request a specific claim while keeping the user&apos;s raw identity data private.</p>
-        <form className="mt-8 space-y-5" onSubmit={submit}>
-          <label className="block text-sm font-semibold text-slate-700">Bank code<input value={bankCode} onChange={e => setBankCode(e.target.value)} placeholder="Example Bank" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" /></label>
-          <label className="block text-sm font-semibold text-slate-700">User ID<input value={userId} onChange={e => setUserId(e.target.value)} placeholder="User UUID" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" /></label>
-          <label className="block text-sm font-semibold text-slate-700">Claim<input value={claim} onChange={e => setClaim(e.target.value)} placeholder="AGE_OVER_18" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" /></label>
-          {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{String(error)}</div>}
-          <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">{loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />}{loading ? 'Creating request...' : 'Create verification request'}</button>
-        </form>
+      <div className="mx-auto max-w-2xl space-y-8">
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-blue-50 p-8 shadow-sm sm:p-12">
+          <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Bank Portal</p>
+          <h1 className="mt-3 text-3xl font-bold text-slate-900">IdentityAI Verification Platform</h1>
+          <p className="mt-4 max-w-lg text-base leading-7 text-slate-600">
+            Request privacy-preserving identity verification from your customers. They prove eligibility without revealing personal details.
+          </p>
 
-        {result && (
-          <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-            <div className="font-semibold">Request created.</div>
-            <div className="mt-2 break-all font-mono text-xs">{JSON.stringify(result)}</div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={() => router.push('/bank/login')}
+              className="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white transition hover:bg-indigo-700"
+            >
+              Sign in to bank account
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="rounded-lg border border-slate-300 px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Learn more
+            </button>
           </div>
-        )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[
+            {
+              title: 'Privacy-Preserving',
+              description: 'Users prove eligibility without revealing personal data'
+            },
+            {
+              title: 'Zero-Knowledge Proofs',
+              description: 'Cryptographic verification ensures authenticity'
+            },
+            {
+              title: 'Minimal Disclosure',
+              description: 'You only receive the verification result'
+            }
+          ].map((feature) => (
+            <div key={feature.title} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="font-semibold text-slate-900">{feature.title}</h3>
+              <p className="mt-2 text-sm text-slate-600">{feature.description}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </Layout>
   )
 }
+
