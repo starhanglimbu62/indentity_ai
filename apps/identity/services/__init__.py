@@ -56,7 +56,6 @@ class IdentityService:
             event_type="IDENTITY_CHECK_STARTED",
             entity_type="identity_document",
             entity_id=document.id,
-            metadata={"nid": validated["nid"]},
         )
 
         if not NIDMCService.verify_identity(validated["nid"]):
@@ -125,7 +124,6 @@ class IdentityService:
             event_type="CREDENTIAL_CREATED",
             entity_type="credential",
             entity_id=credential.id,
-            metadata={"credential_hash": credential.credential_hash},
         )
         DocumentHandlingService.delete_raw_document(document)
 

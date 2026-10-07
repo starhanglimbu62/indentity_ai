@@ -1,225 +1,152 @@
-from django.test import TestCase
-from rest_framework.test import APIClient
-from django.utils import timezone
 from datetime import timedelta
+from unittest.mock import patch
+
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.banks.models import Bank
-from apps.identity.models import VerifiableCredential, VerificationStatus
-from apps.verification.models import VerificationRequest, VerificationRequestStatus
+from apps.banks.services import hash_api_key
+from apps.identity.models import VerifiableCredential
+from apps.identity.services.zk_prover import Prover
+from apps.identity.services.zk_verifier import Verifier
+from apps.verification.models import VerificationRequestStatus
 
-import json
-import os
 
-DOCS = os.path.join(os.path.dirname(__file__), '..', '..', 'docs')
+AGE_THRESHOLD_SECONDS = 567648000
+
 
 class ZKPIntegrationTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='bob', email='bob@example.com', password='pass')
-        self.bank = Bank.objects.create(name='Test Bank', bank_code='TEST', api_key='APIKEY')
-        self.credential = VerifiableCredential.objects.create(user=self.user, credential_hash='hash-1')
+        self.user = User.objects.create_user(
+            username="proof-user",
+            email="proof-user@example.com",
+            password="pass",
+        )
+        self.bank = Bank.objects.create(
+            name="Proof Test Bank",
+            bank_code="PROOF",
+            api_key_hash=hash_api_key("proof-test-api-key"),
+        )
+        self.credential = VerifiableCredential.objects.create(
+            user=self.user,
+            credential_hash="proof-credential-hash",
+            expires_at=timezone.now() + timedelta(days=30),
+        )
         self.client = APIClient()
+
+    def create_request(self):
+        self.client.credentials(HTTP_X_BANK_API_KEY="proof-test-api-key")
+        response = self.client.post(
+            "/api/verification/request/",
+            {
+                "bank_code": self.bank.bank_code,
+                "user_id": self.user.pk,
+                "claim": "AGE_OVER_18",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        request_id = response.data["id"]
+
+        challenge_response = self.client.post(
+            f"/api/verification/{request_id}/challenge/"
+        )
+        self.assertEqual(challenge_response.status_code, 200)
+        return request_id, challenge_response.data["challenge"]
+
+    def generate_age_proof(self, request_id, challenge):
+        current_ts = int(timezone.now().timestamp())
+        proof = Prover.generate_age_proof(
+            credential_id=str(self.credential.id),
+            dob_ts=current_ts - AGE_THRESHOLD_SECONDS - 1000,
+            verification_request_id=str(request_id),
+            challenge=challenge,
+            current_ts=current_ts,
+        )
+        return proof
+
+    def approve_request(self, request_id):
+        self.client.credentials()
         self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            f"/api/verification/{request_id}/consent/",
+            {"approved": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
 
-    def test_valid_age_proof_flow(self):
-        # Create a verification request
-        resp = self.client.post('/api/verification/request/', data={
-            'bank_code': 'TEST',
-            'user_id': str(self.user.id),
-            'claim': 'AGE_OVER_18',
-        }, format='json')
-        self.assertEqual(resp.status_code, 201)
-        req_id = resp.data['id']
+    def submit_proof(self, request_id, proof):
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_X_BANK_API_KEY="proof-test-api-key")
+        return self.client.post(
+            f"/api/verification/{request_id}/verify/",
+            {
+                "proof": proof["proof"],
+                "publicSignals": proof["publicSignals"],
+            },
+            format="json",
+        )
 
-        # Request a challenge (bank/staff should generate the challenge)
-        # create a staff user for the bank action
-        staff = User.objects.create_user(username='bankstaff', email='bankstaff@example.com', password='pass', is_staff=True)
-        self.client.force_authenticate(user=staff)
-        ch = self.client.post(f'/api/verification/{req_id}/challenge/')
-        self.assertEqual(ch.status_code, 200)
-        challenge = ch.data['challenge']
+    def test_valid_age_proof_is_cryptographically_verified(self):
+        request_id, challenge = self.create_request()
+        self.approve_request(request_id)
+        proof = self.generate_age_proof(request_id, challenge)
 
-        # Switch back to the holder (user) and approve (consent)
-        self.client.force_authenticate(user=self.user)
-        approve = self.client.post(f'/api/verification/{req_id}/consent/')
-        self.assertEqual(approve.status_code, 200)
+        response = self.submit_proof(request_id, proof)
 
-        # Load precomputed proof artifact (docs/proof_<req_id>.json fallback)
-        # For our test, docs/proof_test-request.json is used when verification_request_id is 'test-request'
-        proof_artifact = None
-        artifact_path = os.path.join(DOCS, f'proof_{req_id}.json')
-        if os.path.exists(artifact_path):
-            proof_artifact = json.load(open(artifact_path))
-        else:
-            # Fallback to generic test-request artifact
-            proof_artifact = json.load(open(os.path.join(DOCS, 'proof_test-request.json')))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["verified"])
+        self.assertIsNotNone(response.data["timestamp"])
 
-        # Ensure publicSignals contain the correct challenge; override to match stored challenge
-        public = proof_artifact.get('publicSignals', {})
-        public['challenge'] = challenge
-        public['verification_request_id'] = str(req_id)
-        # Ensure public current_ts is fresh and trusted by the server
-        public['current_ts'] = int(timezone.now().timestamp())
+    def test_wrong_challenge_is_rejected_before_proof_verification(self):
+        request_id, challenge = self.create_request()
+        self.approve_request(request_id)
+        proof = self.generate_age_proof(request_id, challenge)
+        proof["publicSignals"][3] = "wrong-challenge"
 
-        # For environments without snarkjs, write precomputed artifact files for this request id so the verifier fallback can find them
-        artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
-        artifact_verified_path = os.path.join(DOCS, f'verified_{req_id}.json')
-        with open(artifact_proof_path, 'w') as f:
-            json.dump({'proof': proof_artifact.get('proof'), 'publicSignals': public}, f)
-        with open(artifact_verified_path, 'w') as f:
-            json.dump({'verified': True}, f)
+        response = self.submit_proof(request_id, proof)
 
-        # Submit proof as the bank (staff)
-        self.client.force_authenticate(user=staff)
-        verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
-            'proof': proof_artifact.get('proof'),
-            'publicSignals': public,
-        }, format='json')
+        self.assertEqual(response.status_code, 400)
 
-        # cleanup artifacts
-        try:
-            os.remove(artifact_proof_path)
-        except Exception:
-            pass
-        try:
-            os.remove(artifact_verified_path)
-        except Exception:
-            pass
+    def test_verification_without_consent_is_rejected(self):
+        request_id, challenge = self.create_request()
+        proof = self.generate_age_proof(request_id, challenge)
 
-        self.assertEqual(verify_resp.status_code, 200)
-        self.assertTrue(verify_resp.data.get('verified'))
+        response = self.submit_proof(request_id, proof)
 
-    def test_wrong_challenge(self):
-        # Create request
-        resp = self.client.post('/api/verification/request/', data={
-            'bank_code': 'TEST',
-            'user_id': str(self.user.id),
-            'claim': 'AGE_OVER_18',
-        }, format='json')
-        req_id = resp.data['id']
-        # staff triggers challenge
-        staff = User.objects.create_user(username='bankstaff2', email='bankstaff2@example.com', password='pass', is_staff=True)
-        self.client.force_authenticate(user=staff)
-        ch = self.client.post(f'/api/verification/{req_id}/challenge/')
-        self.assertEqual(ch.status_code, 200)
-        # restore user for consent
-        self.client.force_authenticate(user=self.user)
-        self.client.post(f'/api/verification/{req_id}/consent/')
+        self.assertEqual(response.status_code, 400)
 
-        # Load proof artifact and set wrong challenge
-        proof_artifact = json.load(open(os.path.join(DOCS, 'proof_test-request.json')))
-        public = proof_artifact.get('publicSignals', {})
-        public['challenge'] = 'wrong-challenge'
-        public['verification_request_id'] = str(req_id)
-        # Ensure public current_ts is fresh to avoid timestamp window rejections
-        public['current_ts'] = int(timezone.now().timestamp())
+    def test_changed_request_signal_is_rejected(self):
+        request_id, challenge = self.create_request()
+        self.approve_request(request_id)
+        proof = self.generate_age_proof(request_id, challenge)
+        proof["publicSignals"][1] = "1"
 
-        # Ensure verifier fallback has an artifact but mismatched challenge
-        artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
-        artifact_verified_path = os.path.join(DOCS, f'verified_{req_id}.json')
-        with open(artifact_proof_path, 'w') as f:
-            json.dump({'proof': proof_artifact.get('proof'), 'publicSignals': public}, f)
-        with open(artifact_verified_path, 'w') as f:
-            json.dump({'verified': True}, f)
+        response = self.submit_proof(request_id, proof)
 
-        verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
-            'proof': proof_artifact.get('proof'),
-            'publicSignals': public,
-        }, format='json')
+        self.assertEqual(response.status_code, 400)
 
-        # cleanup artifacts
-        try:
-            os.remove(artifact_proof_path)
-        except Exception:
-            pass
-        try:
-            os.remove(artifact_verified_path)
-        except Exception:
-            pass
+    def test_verifier_failure_does_not_use_precomputed_success(self):
+        with patch(
+            "apps.identity.services.zk_verifier._call_node_verifier",
+            side_effect=FileNotFoundError("verifier unavailable"),
+        ):
+            with self.assertRaises(FileNotFoundError):
+                Verifier.verify_age_proof("test-request", {}, [])
 
-        self.assertEqual(verify_resp.status_code, 400)
+    def test_request_transitions_only_after_successful_proof(self):
+        request_id, challenge = self.create_request()
+        self.approve_request(request_id)
+        proof = self.generate_age_proof(request_id, challenge)
+        self.submit_proof(request_id, proof)
 
-    def test_missing_consent(self):
-        # Create request
-        resp = self.client.post('/api/verification/request/', data={
-            'bank_code': 'TEST',
-            'user_id': str(self.user.id),
-            'claim': 'AGE_OVER_18',
-        }, format='json')
-        req_id = resp.data['id']
-        # bank/staff must generate challenge
-        staff = User.objects.create_user(username='bankstaff_missingconsent', email='bankstaff_missingconsent@example.com', password='pass', is_staff=True)
-        self.client.force_authenticate(user=staff)
-        ch = self.client.post(f'/api/verification/{req_id}/challenge/')
-        self.assertEqual(ch.status_code, 200)
+        from apps.verification.models import VerificationRequest
 
-        # Do NOT approve; attempt verify
-        proof_artifact = json.load(open(os.path.join(DOCS, 'proof_test-request.json')))
-        public = proof_artifact.get('publicSignals', {})
-        public['challenge'] = ch.data['challenge']
-        public['verification_request_id'] = str(req_id)
-        # Ensure public current_ts is fresh and trusted
-        public['current_ts'] = int(timezone.now().timestamp())
-
-        # Create verifier artifacts for fallback
-        artifact_proof_path = os.path.join(DOCS, f'proof_{req_id}.json')
-        artifact_verified_path = os.path.join(DOCS, f'verified_{req_id}.json')
-        with open(artifact_proof_path, 'w') as f:
-            json.dump({'proof': proof_artifact.get('proof'), 'publicSignals': public}, f)
-        with open(artifact_verified_path, 'w') as f:
-            json.dump({'verified': True}, f)
-
-        # submit proof as bank
-        self.client.force_authenticate(user=staff)
-        verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
-            'proof': proof_artifact.get('proof'),
-            'publicSignals': public,
-        }, format='json')
-
-        # cleanup artifacts
-        try:
-            os.remove(artifact_proof_path)
-        except Exception:
-            pass
-        try:
-            os.remove(artifact_verified_path)
-        except Exception:
-            pass
-
-        self.assertEqual(verify_resp.status_code, 400)
-
-    def test_inactive_credential(self):
-        # Create request
-        self.credential.status = 'REVOKED'
-        self.credential.save(update_fields=['status'])
-
-        resp = self.client.post('/api/verification/request/', data={
-            'bank_code': 'TEST',
-            'user_id': str(self.user.id),
-            'claim': 'AGE_OVER_18',
-        }, format='json')
-        self.assertEqual(resp.status_code, 201)
-        req_id = resp.data['id']
-
-        # staff triggers challenge
-        staff = User.objects.create_user(username='bankstaff3', email='bankstaff3@example.com', password='pass', is_staff=True)
-        self.client.force_authenticate(user=staff)
-        ch = self.client.post(f'/api/verification/{req_id}/challenge/')
-        self.assertEqual(ch.status_code, 200)
-        # restore user for consent
-        self.client.force_authenticate(user=self.user)
-        self.client.post(f'/api/verification/{req_id}/consent/')
-
-        proof_artifact = json.load(open(os.path.join(DOCS, 'proof_test-request.json')))
-        public = proof_artifact.get('publicSignals', {})
-        public['challenge'] = ch.data['challenge']
-        public['verification_request_id'] = str(req_id)
-        # Ensure public current_ts is fresh and trusted
-        public['current_ts'] = int(timezone.now().timestamp())
-
-        verify_resp = self.client.post(f'/api/verification/{req_id}/verify/', data={
-            'proof': proof_artifact.get('proof'),
-            'publicSignals': public,
-        }, format='json')
-
-        self.assertEqual(verify_resp.status_code, 400)
+        verification_request = VerificationRequest.objects.get(pk=request_id)
+        self.assertEqual(
+            verification_request.status,
+            VerificationRequestStatus.VERIFIED,
+        )
+        self.assertIsNone(verification_request.challenge)

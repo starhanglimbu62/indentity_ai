@@ -76,13 +76,12 @@ export default function BankRequestDetailPage() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Verification Request</p>
-          <h1 className="mt-2 text-2xl font-bold text-slate-900">{request?.user?.name}</h1>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900">Request details</h1>
 
           <div className="mt-6 space-y-4">
             <div className="rounded-lg bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">User</p>
-              <p className="mt-2 font-semibold text-slate-900">{request?.user?.name}</p>
-              <p className="text-sm text-slate-600">{request?.user?.email}</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Verification ID</p>
+              <p className="mt-2 break-all font-mono text-sm text-slate-700">{request?.id}</p>
             </div>
 
             <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-4">

@@ -96,14 +96,15 @@ V0.4 introduces a real zero-knowledge proof flow for the single claim AGE_OVER_1
 
 - A new ZKP boundary is added in the codebase (apps.identity.services.zk_*) to orchestrate challenge generation and call out to a prover/verifier.
 - The actual cryptographic work is performed by a Node/snarkjs helper (docs/prover.js and docs/verifier.js). Django remains responsible for authentication, consent, request state, challenge lifecycle, credential status checks, and returning the minimal verification result to banks.
-- The circom circuit (docs/age_over_18.circom) models the comparison "current_ts - dob_ts >= 18 years" and binds the proof to the verification_request via a challenge public input.
+- The Circom circuit (`docs/age_over_18.circom`) proves only the age comparison for a private DOB and exposes the request identifier, claim identifier, and challenge as public inputs. Django checks those inputs against the persisted request.
 - Pinned toolchain for this prototype: circom compiler v2.2.3 (official GitHub release), circomlib 2.0.5, snarkjs 0.7.6. The comparator uses the standard circomlib Num2Bits template, then constrains the signed-age difference to an unsigned bit width without field-wraparound.
-- Private witness material (DOB, credential randomness) is never persisted nor written to logs. The prover runs server-side for the prototype and only holds private witness in-memory during proof generation.
+- The proof is not bound to a credential commitment: `credential_id` is not a circuit input, and the circuit does not prove that the private DOB belongs to the user's verified identity. Do not treat a valid age proof as proof of an identity-verified user's age.
+- The prover runs server-side for the prototype. Private witness material is passed to the prover process and is not intentionally persisted or logged.
 - Proof lifecycle: REQUESTED -> GENERATED -> VERIFIED (or FAILED/EXPIRED)
 - Verification request lifecycle: PENDING -> APPROVED -> VERIFIED (consent mandatory)
 
 Notes on operational setup:
-- Developer environment / CI must have Node.js and snarkjs installed to generate/verify real proofs; test artifacts with precomputed proofs are included under docs/ for CI fallback.
+- The local `docs/node_modules` dependency set must provide Node.js and snarkjs to generate and verify real proofs. The backend integration/smoke tests use the actual proof path; precomputed proof artifacts are not an accepted verification fallback.
 - The implementation aims to separate cryptography (Node/snarkjs) from Django orchestration to make it easier to migrate prover to a holder-controlled environment in future versions.
 
 ## Current implementations
@@ -115,7 +116,7 @@ NIDMC:
 Mock abstraction with validation rules
 
 ZKP:
-Placeholder hash implementation
+Circom/SnarkJS AGE_OVER_18 prototype; not credential-bound and not production-ready
 
 Blockchain:
 Not implemented

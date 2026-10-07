@@ -1,5 +1,6 @@
-const { spawnSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+const snarkjs = require('snarkjs');
 
 function readStdin() {
   return new Promise((resolve, reject) => {
@@ -28,46 +29,42 @@ function readStdin() {
       };
     }
 
-    // If a precomputed verification file is present for this verification_request_id, return it
-    const artifactsDir = './docs/test_artifacts';
-    const vrid = (normalizedSignals && normalizedSignals.verification_request_id) || 'unknown';
-    const checkPath = `${artifactsDir}/verified_${vrid}.json`;
-    if (fs.existsSync(checkPath)) {
-      const data = JSON.parse(fs.readFileSync(checkPath, 'utf8'));
-      process.stdout.write(JSON.stringify(data));
-      return;
+    const baseDirectory = __dirname;
+    const keyPaths = [
+      path.join(baseDirectory, 'zk_build', 'age_over_18_vk.json'),
+      path.join(baseDirectory, 'age_over_18_vk.json'),
+    ];
+    const keyPath = keyPaths.find(candidate => fs.existsSync(candidate));
+    if (!keyPath) {
+      throw new Error('Verification key is unavailable.');
     }
 
-    // Otherwise, attempt to verify using snarkjs and the verification key
-    const vkPath = './docs/zk_build/age_over_18_vk.json';
-    const fallbackVkPath = './docs/age_over_18_vk.json';
-    const proofPath = './docs/proof.json';
-    const publicPath = './docs/public.json';
-    fs.writeFileSync(proofPath, JSON.stringify(proof));
-    fs.writeFileSync(publicPath, JSON.stringify(Array.isArray(publicSignals) ? publicSignals : [
-      String(normalizedSignals.current_ts ?? ''),
-      String(normalizedSignals.verification_request_id ?? ''),
-      String(normalizedSignals.claim_id ?? ''),
-      String(normalizedSignals.challenge ?? ''),
-    ]));
-
-    const actualVkPath = fs.existsSync(vkPath) ? vkPath : (fs.existsSync(fallbackVkPath) ? fallbackVkPath : null);
-    if (!actualVkPath) {
-      console.error('verification key missing');
-      process.exit(2);
-    }
-
-    const snarkjsCli = require.resolve('snarkjs');
-    const verify = spawnSync('node', [snarkjsCli, 'plonk', 'verify', actualVkPath, publicPath, proofPath], { encoding: 'utf8' });
-    if (verify.status !== 0) {
-      console.error('snarkjs verify failed', verify.stderr || verify.stdout);
-      process.exit(3);
-    }
-
-    // If successful, snarkjs prints success; return verified true
-    process.stdout.write(JSON.stringify({ verified: true }));
+    const verificationKey = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+    const verified = await snarkjs.plonk.verify(
+      verificationKey,
+      _asArray(publicSignals, normalizedSignals),
+      proof,
+    );
+    process.stdout.write(
+      JSON.stringify({ verified: verified === true }),
+      () => process.exit(0),
+    );
   } catch (err) {
-    console.error(err && err.stack ? err.stack : err);
-    process.exit(1);
+    process.stderr.write(
+      `Proof verification failed: ${err && err.message ? err.message : 'unknown error'}\n`,
+      () => process.exit(1),
+    );
   }
 })();
+
+function _asArray(publicSignals, normalizedSignals) {
+  if (Array.isArray(publicSignals)) {
+    return publicSignals.map(String);
+  }
+  return [
+    String(normalizedSignals.current_ts ?? ''),
+    String(normalizedSignals.verification_request_id ?? ''),
+    String(normalizedSignals.claim_id ?? ''),
+    String(normalizedSignals.challenge ?? ''),
+  ];
+}

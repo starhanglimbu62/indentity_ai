@@ -69,6 +69,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.banks.models import Bank
+from apps.banks.services import BankCredentialService
 from apps.identity.models import (
     IdentityDocument,
     VerifiableCredential,
@@ -204,16 +205,20 @@ def cleanup() -> None:
 
 def ensure_snarkjs_available() -> None:
     try:
-        result = subprocess.run("snarkjs --help", shell=True, capture_output=True, text=True)
-    except OSError as exc:
-        raise RuntimeError(f"snarkjs is not available on PATH: {exc}") from exc
+        result = subprocess.run(
+            ["node", "-e", "require.resolve('snarkjs')"],
+            cwd=PROJECT_ROOT / "docs",
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"Unable to resolve the local snarkjs dependency: {exc}") from exc
 
-    stdout = result.stdout or ""
-    output = stdout + (result.stderr or "")
-    if result.returncode == 0 or "snarkjs" in stdout.lower() or "Usage:" in output or "Full Command" in output or "snarkjs@" in output:
-        return
-
-    raise RuntimeError(f"snarkjs --help failed: {output or result.stderr or result.stdout}")
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"Local snarkjs dependency is unavailable: {output}")
 
 
 def main() -> int:
@@ -390,11 +395,11 @@ def main() -> int:
     print("5. Bank")
     print("-" * 70)
 
-    bank = Bank.objects.create(
+    bank, bank_api_key = BankCredentialService.provision_bank(
         name="IdentityAI Smoke Bank",
         bank_code=BANK_CODE,
-        api_key="smoke-test-api-key",
     )
+    client.credentials(HTTP_X_BANK_API_KEY=bank_api_key)
 
     record_test(
         "Bank created",
@@ -414,9 +419,6 @@ def main() -> int:
         {
             "bank_code": BANK_CODE,
 
-            # Intentionally included because the current API
-            # exposes this field. The security test later checks
-            # whether it can be abused.
             "user_id": user.id,
 
             "claim": "AGE_OVER_18",
@@ -457,10 +459,6 @@ def main() -> int:
     print("6a. Challenge issuance (bank/staff)")
     print("-" * 70)
 
-    # Create a bank staff user and request a challenge
-    staff = User.objects.create_user(username='smoke_bankstaff', email='staff@test.local', password='pass', is_staff=True)
-    client.force_authenticate(user=staff)
-
     ch_resp = client.post(f"/api/verification/{verification_request.id}/challenge/")
     assert_status(ch_resp, 200, "Challenge issuance")
 
@@ -485,7 +483,9 @@ def main() -> int:
 
     response = client.post(
         f"/api/verification/"
-        f"{verification_request.id}/consent/"
+        f"{verification_request.id}/consent/",
+        {"approved": True},
+        format="json",
     )
 
     assert_status(
@@ -507,7 +507,7 @@ def main() -> int:
     # ============================================================
 
     print()
-    print("8. Verification (using real V0.4 prover)")
+    print("8. AGE_OVER_18 Proof Verification (using real V0.4 prover)")
     print("-" * 70)
 
     # Generate a proof using the project's prover implementation.
@@ -546,38 +546,7 @@ def main() -> int:
     dob_ts = int(datetime.combine(dob, datetime.min.time()).timestamp())
     current_ts = int(timezone.now().timestamp())
 
-    # Ensure the zkey is in the expected location so the Node prover can run snarkjs.
-    # The build artifacts are stored under docs/zk_build; copy the zkey into docs/ if needed.
-    try:
-        zkey_src = PROJECT_ROOT / 'docs' / 'zk_build' / 'age_over_18.zkey'
-        zkey_dst = PROJECT_ROOT / 'docs' / 'age_over_18.zkey'
-        if zkey_src.exists() and not zkey_dst.exists():
-            import shutil
-
-            shutil.copyfile(str(zkey_src), str(zkey_dst))
-            record_test('ZKey copied to prover path', True)
-        elif zkey_dst.exists():
-            record_test('ZKey already present', True)
-        else:
-            record_test('ZKey missing (no copy available)', False, f"Checked {zkey_src}")
-    except Exception as exc:
-        record_test('ZKey presence check', False, str(exc))
-
-    # Remove any precomputed artifact for this request so prover cannot fallback
-    artifact_path = PROJECT_ROOT / 'docs' / f'proof_{verification_request.id}.json'
-    verified_artifact = PROJECT_ROOT / 'docs' / f'verified_{verification_request.id}.json'
-    try:
-        if artifact_path.exists():
-            artifact_path.unlink()
-    except Exception:
-        pass
-    try:
-        if verified_artifact.exists():
-            verified_artifact.unlink()
-    except Exception:
-        pass
-
-    # Call the prover to create proof + publicSignals
+    # Generate a fresh proof using the prover's configured build artifacts.
     try:
         proof_bundle = Prover.generate_age_proof(
             credential_id=str(credential.id),
@@ -616,8 +585,9 @@ def main() -> int:
         cleanup()
         return 1
 
-    # Submit proof as the bank/staff (verifier)
-    client.force_authenticate(user=staff)
+    # Submit proof as the authenticated bank principal.
+    client.force_authenticate(user=None)
+    client.credentials(HTTP_X_BANK_API_KEY=bank_api_key)
     verify_resp = client.post(
         f"/api/verification/{verification_request.id}/verify/",
         data={
@@ -630,7 +600,7 @@ def main() -> int:
     assert_status(
         verify_resp,
         200,
-        "Identity verification",
+        "AGE_OVER_18 proof verification",
     )
 
     verification_request.refresh_from_db()

@@ -1,8 +1,12 @@
 import json
+import subprocess
 from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
+
+from apps.identity.models import CredentialStatus
+from apps.identity.services.zk_claims import CLAIM_AGE_OVER_18
 
 from .models import (
     VerificationRequest,
@@ -12,6 +16,7 @@ from .models import (
 from apps.audit.services import AuditService
 from apps.common.exceptions import InvalidStateTransition
 from apps.identity.services.zk_challenge import encode_challenge
+from apps.identity.services.zk_challenge import generate_challenge
 
 
 def _normalize_public_signals(public_signals):
@@ -20,7 +25,7 @@ def _normalize_public_signals(public_signals):
         return public_signals
 
     if isinstance(public_signals, list):
-        if len(public_signals) < 4:
+        if len(public_signals) != 4:
             raise ValueError('Public signals list must include current_ts, verification_request_id, claim_id, and challenge.')
 
         return {
@@ -43,9 +48,50 @@ def _normalize_public_signals(public_signals):
 class VerificationService:
 
     @staticmethod
+    def issue_challenge(verification_request):
+        with transaction.atomic():
+            locked_request = VerificationRequest.objects.select_for_update().get(
+                pk=verification_request.pk
+            )
+            if locked_request.status != VerificationRequestStatus.PENDING:
+                raise InvalidStateTransition(
+                    "A challenge can only be issued for a pending request."
+                )
+            if (
+                locked_request.expires_at
+                and timezone.now() >= locked_request.expires_at
+            ):
+                locked_request.status = VerificationRequestStatus.EXPIRED
+                locked_request.save(update_fields=["status"])
+                expired = True
+            else:
+                token, expires_at = generate_challenge()
+                locked_request.challenge = token
+                locked_request.challenge_expires_at = expires_at
+                locked_request.save(
+                    update_fields=["challenge", "challenge_expires_at"]
+                )
+                expired = False
+
+        if expired:
+            raise InvalidStateTransition("Verification request has expired.")
+        return token, expires_at
+
+    @staticmethod
     @transaction.atomic
     def create_request(bank, user, credential, claim):
         """Create a verification request. Caller must ensure caller identity/permissions."""
+        if claim != CLAIM_AGE_OVER_18:
+            raise InvalidStateTransition("Unsupported verification claim.")
+        if credential.user_id != user.pk:
+            raise InvalidStateTransition("Credential does not belong to the requested user.")
+        if (
+            credential.status != CredentialStatus.ACTIVE
+            or not credential.is_active
+            or (credential.expires_at and timezone.now() >= credential.expires_at)
+        ):
+            raise InvalidStateTransition("An active credential is required.")
+
         request = VerificationRequest.objects.create(
             bank=bank,
             user=user,
@@ -74,154 +120,198 @@ class VerificationService:
         return request
 
     @staticmethod
-    @transaction.atomic
     def approve_request(verification_request):
         """Approve a pending verification request (user consent).
 
         Allowed: PENDING -> APPROVED
         """
-        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
-            verification_request.status = VerificationRequestStatus.EXPIRED
-            verification_request.save(update_fields=["status"])
+        expired = False
+        with transaction.atomic():
+            verification_request = VerificationRequest.objects.select_for_update().get(
+                pk=verification_request.pk
+            )
+            if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
+                verification_request.status = VerificationRequestStatus.EXPIRED
+                verification_request.save(update_fields=["status"])
+                expired = True
+            elif verification_request.status != VerificationRequestStatus.PENDING:
+                raise InvalidStateTransition(
+                    "Verification request is no longer pending and cannot be approved."
+                )
+            else:
+                verification_request.status = VerificationRequestStatus.APPROVED
+                verification_request.user_consented_at = timezone.now()
+                verification_request.save(update_fields=["status", "user_consented_at"])
+                AuditService.record_event(
+                    user=verification_request.user,
+                    event_type="VERIFICATION_REQUEST_APPROVED",
+                    entity_type="verification_request",
+                    entity_id=verification_request.id,
+                    metadata={"claim": verification_request.claim},
+                )
+        if expired:
             raise InvalidStateTransition("Verification request has expired.")
-
-        if verification_request.status != VerificationRequestStatus.PENDING:
-            raise InvalidStateTransition("Verification request is no longer pending and cannot be approved.")
-
-        verification_request.status = VerificationRequestStatus.APPROVED
-        verification_request.user_consented_at = timezone.now()
-        verification_request.save(update_fields=["status", "user_consented_at"])  # atomic
-        AuditService.record_event(
-            user=verification_request.user,
-            event_type="VERIFICATION_REQUEST_APPROVED",
-            entity_type="verification_request",
-            entity_id=verification_request.id,
-            metadata={"claim": verification_request.claim},
-        )
         return verification_request
 
     @staticmethod
-    @transaction.atomic
     def deny_request(verification_request):
         """Deny a pending verification request.
 
         Allowed: PENDING -> DENIED
         """
-        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
-            verification_request.status = VerificationRequestStatus.EXPIRED
-            verification_request.save(update_fields=["status"])
+        expired = False
+        with transaction.atomic():
+            verification_request = VerificationRequest.objects.select_for_update().get(
+                pk=verification_request.pk
+            )
+            if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
+                verification_request.status = VerificationRequestStatus.EXPIRED
+                verification_request.save(update_fields=["status"])
+                expired = True
+            elif verification_request.status != VerificationRequestStatus.PENDING:
+                raise InvalidStateTransition("Only pending requests can be denied.")
+            else:
+                verification_request.status = VerificationRequestStatus.DENIED
+                verification_request.save(update_fields=["status"])
+                AuditService.record_event(
+                    user=verification_request.user,
+                    event_type="VERIFICATION_REQUEST_DENIED",
+                    entity_type="verification_request",
+                    entity_id=verification_request.id,
+                    metadata={"claim": verification_request.claim},
+                )
+        if expired:
             raise InvalidStateTransition("Verification request has expired.")
-
-        if verification_request.status != VerificationRequestStatus.PENDING:
-            raise InvalidStateTransition("Only pending requests can be denied.")
-
-        verification_request.status = VerificationRequestStatus.DENIED
-        verification_request.save(update_fields=["status"])  # atomic
-        
-        AuditService.record_event(
-            user=verification_request.user,
-            event_type="VERIFICATION_REQUEST_DENIED",
-            entity_type="verification_request",
-            entity_id=verification_request.id,
-            metadata={"claim": verification_request.claim},
-        )
-        
         return verification_request
 
     @staticmethod
-    @transaction.atomic
     def verify_request(verification_request, proof: dict, public_signals: dict):
         """Verify a request using provided proof/public signals.
 
         Allowed: APPROVED -> VERIFIED
         """
-        if verification_request.expires_at and timezone.now() >= verification_request.expires_at:
-            verification_request.status = VerificationRequestStatus.EXPIRED
-            verification_request.save(update_fields=["status"])
+        expired = False
+        with transaction.atomic():
+            current_request = VerificationRequest.objects.select_for_update().get(
+                pk=verification_request.pk
+            )
+            if (
+                current_request.expires_at
+                and timezone.now() >= current_request.expires_at
+            ):
+                current_request.status = VerificationRequestStatus.EXPIRED
+                current_request.save(update_fields=["status"])
+                expired = True
+        if expired:
             raise InvalidStateTransition("Verification request has expired.")
 
-        # Require explicit user consent first
-        if verification_request.status != VerificationRequestStatus.APPROVED:
-            raise InvalidStateTransition("User consent is required before verification.")
+        with transaction.atomic():
+            verification_request = (
+                VerificationRequest.objects.select_for_update()
+                .select_related("credential", "user")
+                .get(pk=verification_request.pk)
+            )
+            if (
+                verification_request.expires_at
+                and timezone.now() >= verification_request.expires_at
+            ):
+                raise InvalidStateTransition("Verification request has expired.")
 
-        # Ensure credential is active and not expired.
-        credential = verification_request.credential
-        if hasattr(credential, 'status'):
-            if credential.status == 'EXPIRED':
-                raise InvalidStateTransition('Credential is expired.')
-            if credential.status != 'ACTIVE':
-                raise InvalidStateTransition('Credential is not active.')
-        else:
-            if not credential.is_active:
-                raise InvalidStateTransition('Credential is not active.')
+            if verification_request.status != VerificationRequestStatus.APPROVED:
+                raise InvalidStateTransition("User consent is required before verification.")
+            if verification_request.user_consented_at is None:
+                raise InvalidStateTransition("An explicit user consent record is required.")
+            if verification_request.claim != CLAIM_AGE_OVER_18:
+                raise InvalidStateTransition("Unsupported verification claim.")
 
-        expires_at = getattr(credential, 'expires_at', None)
-        if expires_at is not None and timezone.now() >= expires_at:
-            if hasattr(credential, 'status'):
-                credential.status = 'EXPIRED'
-                credential.save(update_fields=['status'])
-            raise InvalidStateTransition('Credential is expired.')
+            credential = verification_request.credential
+            if (
+                credential.user_id != verification_request.user_id
+                or credential.status != CredentialStatus.ACTIVE
+                or not credential.is_active
+            ):
+                raise InvalidStateTransition("Credential is not active for this user.")
+            if credential.expires_at and timezone.now() >= credential.expires_at:
+                raise InvalidStateTransition("Credential is expired.")
 
-        # Ensure challenge present and matches public_signals
-        challenge = verification_request.challenge
-        expires_at = verification_request.challenge_expires_at
-        public_signals = _normalize_public_signals(public_signals)
+            public_signals = _normalize_public_signals(public_signals)
+            challenge = verification_request.challenge
+            challenge_expires_at = verification_request.challenge_expires_at
+            sent_challenge = public_signals.get("challenge")
+            if not challenge or not sent_challenge:
+                raise ValueError("Challenge is missing.")
+            if str(sent_challenge) not in {
+                str(challenge),
+                str(encode_challenge(challenge)),
+            }:
+                raise ValueError("Challenge does not match verification request.")
+            if challenge_expires_at and timezone.now() >= challenge_expires_at:
+                raise ValueError("Challenge expired.")
 
-        sent_challenge = public_signals.get('challenge')
-        if not challenge or not sent_challenge:
-            raise ValueError('Challenge is missing.')
+            sent_request_id = public_signals.get("verification_request_id")
+            expected_request_ids = {
+                str(verification_request.id),
+                str(encode_challenge(str(verification_request.id))),
+            }
+            if str(sent_request_id) not in expected_request_ids:
+                raise ValueError("Proof is bound to a different verification request.")
+            if str(public_signals.get("claim_id")) != "1":
+                raise ValueError("Proof is bound to an unsupported claim.")
 
-        expected_challenges = {str(challenge), str(encode_challenge(challenge))}
-        if str(sent_challenge) not in expected_challenges:
-            raise ValueError('Challenge does not match verification request.')
-        if expires_at and timezone.now() > expires_at:
-            raise ValueError('Challenge expired.')
+            current_ts = public_signals.get("current_ts")
+            if current_ts is None:
+                raise ValueError("Current timestamp is missing from public signals.")
+            try:
+                current_ts_value = int(current_ts)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Current timestamp is invalid.") from exc
+            now_ts = int(timezone.now().timestamp())
+            if abs(current_ts_value - now_ts) > 300:
+                raise ValueError(
+                    "Current timestamp is outside the allowed verification window."
+                )
 
-        # current_ts must be trusted and server-issued.
-        current_ts = public_signals.get('current_ts')
-        if current_ts is None:
-            raise ValueError('Current timestamp is missing from public signals.')
-        try:
-            current_ts_value = int(current_ts)
-        except (TypeError, ValueError):
-            raise ValueError('Current timestamp is invalid.')
-        now_ts = int(timezone.now().timestamp())
-        if abs(current_ts_value - now_ts) > 300:
-            raise ValueError('Current timestamp is not trusted or is outside the allowed verification window.')
+            from apps.identity.services.zk_verifier import Verifier
 
-        # Verify proof cryptographically using the ZK verifier boundary.
-        # Keep the list-shaped public signals for the snarkjs verifier, while using the dict form
-        # only for challenge/current_ts validation above.
-        from apps.identity.services.zk_verifier import Verifier
-
-        verified = False
-        try:
-            verifier_payload = public_signals if isinstance(public_signals, list) else [
-                str(public_signals.get('current_ts', '')),
-                str(public_signals.get('verification_request_id', '')),
-                str(public_signals.get('claim_id', '')),
-                str(public_signals.get('challenge', '')),
+            verifier_payload = [
+                str(public_signals.get("current_ts", "")),
+                str(public_signals.get("verification_request_id", "")),
+                str(public_signals.get("claim_id", "")),
+                str(public_signals.get("challenge", "")),
             ]
-            verified = Verifier.verify_age_proof(str(verification_request.id), proof, verifier_payload)
-        except Exception as exc:
-            raise ValueError(f'Cryptographic verification failed: {exc}') from exc
+            try:
+                verified = Verifier.verify_age_proof(
+                    str(verification_request.id),
+                    proof,
+                    verifier_payload,
+                )
+            except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                raise InvalidStateTransition(
+                    "Cryptographic proof verification is unavailable."
+                ) from exc
+            if not verified:
+                raise ValueError("Proof verification failed.")
 
-        if not verified:
-            raise ValueError('Proof verification failed.')
-
-        # Mark as verified, record time, and clear/consume the challenge to prevent replay
-        verification_request.status = VerificationRequestStatus.VERIFIED
-        verification_request.verified_at = timezone.now()
-        verification_request.challenge = None
-        verification_request.challenge_expires_at = None
-        verification_request.save(update_fields=['status', 'verified_at', 'challenge', 'challenge_expires_at'])
-
-        AuditService.record_event(
-            user=verification_request.user,
-            event_type="VERIFICATION_REQUEST_VERIFIED",
-            entity_type="verification_request",
-            entity_id=verification_request.id,
-            metadata={"claim": verification_request.claim, "verification_id": str(verification_request.id)},
-        )
-
+            verification_request.status = VerificationRequestStatus.VERIFIED
+            verification_request.verified_at = timezone.now()
+            verification_request.challenge = None
+            verification_request.challenge_expires_at = None
+            verification_request.save(
+                update_fields=[
+                    "status",
+                    "verified_at",
+                    "challenge",
+                    "challenge_expires_at",
+                ]
+            )
+            AuditService.record_event(
+                user=verification_request.user,
+                event_type="VERIFICATION_REQUEST_VERIFIED",
+                entity_type="verification_request",
+                entity_id=verification_request.id,
+                metadata={
+                    "claim": verification_request.claim,
+                    "verification_id": str(verification_request.id),
+                },
+            )
         return verification_request

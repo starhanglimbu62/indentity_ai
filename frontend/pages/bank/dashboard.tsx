@@ -99,7 +99,7 @@ export default function BankDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="px-4 py-3 text-left font-semibold text-slate-900">User</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Request</th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-900">Claim</th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-900">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-900">Created</th>
@@ -110,8 +110,7 @@ export default function BankDashboard() {
                   {requests.map((req) => (
                     <tr key={req.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-4 py-4">
-                        <div className="font-semibold text-slate-900">{req.user?.name}</div>
-                        <div className="text-xs text-slate-500">{req.user?.email}</div>
+                        <div className="font-mono text-xs text-slate-600">{req.id}</div>
                       </td>
                       <td className="px-4 py-4">
                         <code className="font-mono text-sm text-indigo-600">{req.claim}</code>

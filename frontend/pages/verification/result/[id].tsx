@@ -1,7 +1,7 @@
 import { useRouter } from 'next/router'
 import { useCallback, useEffect, useState } from 'react'
 import Layout from '../../../src/components/Layout'
-import { verifyRequest } from '../../../src/api/api'
+import api from '../../../src/api/api'
 
 export default function ResultPage() {
   const router = useRouter()
@@ -14,8 +14,13 @@ export default function ResultPage() {
     if (!id) return
     setLoading(true)
     try {
-      const res = await verifyRequest(String(id), null, null)
-      setResult(res)
+      const request = await api.getVerificationRequest(String(id)) as any
+      setResult({
+        verified: request.status === 'VERIFIED',
+        claim: request.claim,
+        timestamp: request.verified_at,
+        verification_id: request.id,
+      })
     } catch (err: any) {
       setError(err?.data || 'Verification failed')
     } finally { setLoading(false) }
@@ -34,7 +39,7 @@ export default function ResultPage() {
         {result && (
           <div className="mt-6 space-y-3">
             <div className={`rounded-lg p-4 font-semibold ${result.verified ? 'border border-emerald-200 bg-emerald-50 text-emerald-800' : 'border border-amber-200 bg-amber-50 text-amber-800'}`}>
-              {result.verified ? 'Identity verified' : 'Verification not completed'}
+              {result.verified ? 'Claim verification succeeded' : 'Verification not completed'}
             </div>
             <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
               <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between"><dt className="text-slate-500">Verified</dt><dd className="font-medium text-slate-900">{String(result.verified)}</dd></div>

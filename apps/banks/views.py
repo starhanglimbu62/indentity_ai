@@ -1,41 +1,39 @@
-from django.db import transaction
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .models import Bank
+from .authentication import BankAPIKeyAuthentication
+from .permissions import IsBankPrincipal, get_authenticated_bank
+from .serializers import BankLoginSerializer, BankProvisionSerializer
+from .services import BankCredentialService
 
 
 class BankRegisterView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
-    @transaction.atomic
     def post(self, request):
-        name = (request.data.get("name") or "").strip()
-        bank_code = (request.data.get("bank_code") or "").strip()
-        webhook_url = (request.data.get("webhook_url") or "").strip()
-
-        if not name or not bank_code:
-            return Response({"error": "name and bank_code are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if Bank.objects.filter(bank_code__iexact=bank_code).exists():
-            return Response({"error": "A bank with this code already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
-        bank = Bank.objects.create(
-            name=name,
-            bank_code=bank_code,
-            webhook_url=webhook_url or None,
-        )
+        serializer = BankProvisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            bank, api_key = BankCredentialService.provision_bank(
+                **serializer.validated_data
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             {
                 "id": str(bank.id),
                 "name": bank.name,
                 "bank_code": bank.bank_code,
-                "api_key": bank.api_key,
                 "webhook_url": bank.webhook_url,
                 "is_active": bank.is_active,
+                "api_key": api_key,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -45,49 +43,36 @@ class BankLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        bank_code = (request.data.get("bank_code") or "").strip()
-        api_key = (request.data.get("api_key") or "").strip()
-
-        if not bank_code or not api_key:
-            return Response({"error": "bank_code and api_key are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        bank = Bank.objects.filter(bank_code__iexact=bank_code, api_key=api_key, is_active=True).first()
+        serializer = BankLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        bank = BankCredentialService.authenticate(
+            **serializer.validated_data
+        )
         if not bank:
-            return Response({"error": "Invalid bank credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"error": "Invalid bank credentials."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         return Response(
             {
                 "id": str(bank.id),
                 "name": bank.name,
                 "bank_code": bank.bank_code,
-                "api_key": bank.api_key,
-                "webhook_url": bank.webhook_url,
-                "is_active": bank.is_active,
             },
             status=status.HTTP_200_OK,
         )
 
 
 class BankGetInfoView(APIView):
-    """Get current bank info based on bank API key from header."""
-    permission_classes = [AllowAny]
+    authentication_classes = [BankAPIKeyAuthentication, JWTAuthentication]
+    permission_classes = [IsBankPrincipal]
 
     def get(self, request):
-        api_key = request.headers.get('X-Bank-API-Key', '')
-        
-        if not api_key:
-            return Response({"error": "X-Bank-API-Key header is required."}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        bank = Bank.objects.filter(api_key=api_key, is_active=True).first()
-        
-        if not bank:
-            return Response({"error": "Invalid bank API key."}, status=status.HTTP_401_UNAUTHORIZED)
-        
+        bank = get_authenticated_bank(request)
         return Response({
             "id": str(bank.id),
             "name": bank.name,
             "bank_code": bank.bank_code,
-            "api_key": bank.api_key,
-            "webhook_url": bank.webhook_url,
             "is_active": bank.is_active,
         })

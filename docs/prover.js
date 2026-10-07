@@ -16,39 +16,18 @@ function encodeFieldElement(value) {
 }
 
 async function run() {
-    console.error("[1] Prover started");
-    const inputPath = path.join(__dirname, "tmp_input.json");
     const wasmPath = path.join(__dirname, "zk_build", "age_over_18_js", "age_over_18.wasm");
     const zkeyPath = path.join(__dirname, "zk_build", "age_over_18.zkey");
     const legacyZkeyPath = path.join(__dirname, "age_over_18.zkey");
-
-    console.error("[1a] Resolving file paths", {
-        __dirname,
-        inputPath,
-        wasmPath,
-        zkeyPath,
-        legacyZkeyPath,
-        inputExists: fs.existsSync(inputPath),
-        wasmExists: fs.existsSync(wasmPath),
-        zkeyExists: fs.existsSync(zkeyPath),
-        legacyZkeyExists: fs.existsSync(legacyZkeyPath),
-    });
-    
-    if (!fs.existsSync(inputPath)) {
-        console.error("ERROR: tmp_input.json not found!");
-        process.exit(1);
+    const stdinChunks = [];
+    for await (const chunk of process.stdin) {
+        stdinChunks.push(chunk);
     }
-    let inputData;
-    if (process.stdin.isTTY) {
-        inputData = JSON.parse(fs.readFileSync(inputPath, "utf8"));
-    } else {
-        const stdinChunks = [];
-        for await (const chunk of process.stdin) {
-            stdinChunks.push(chunk);
-        }
-        const stdinData = Buffer.concat(stdinChunks).toString("utf8").trim();
-        inputData = JSON.parse(stdinData || fs.readFileSync(inputPath, "utf8"));
+    const stdinData = Buffer.concat(stdinChunks).toString("utf8").trim();
+    if (!stdinData) {
+        throw new Error("Prover input is required.");
     }
+    const inputData = JSON.parse(stdinData);
 
     const circuitInput = {
         dob_ts: inputData.dob_ts,
@@ -59,34 +38,20 @@ async function run() {
     };
 
     const activeZkeyPath = fs.existsSync(zkeyPath) ? zkeyPath : legacyZkeyPath;
-    console.error("[2] Starting fullProve with zkey:", activeZkeyPath);
-
-    try {
-        const { proof, publicSignals } = await snarkjs.plonk.fullProve(
-            circuitInput,
-            wasmPath,
-            activeZkeyPath
-        );
-
-        console.error("[3] Proof generated successfully!");
-
-        const proofJson = JSON.stringify(proof, null, 2);
-        const publicSignalsJson = JSON.stringify(publicSignals, null, 2);
-
-        fs.writeFileSync(path.join(__dirname, "proof.json"), proofJson);
-        fs.writeFileSync(path.join(__dirname, "public.json"), publicSignalsJson);
-
-        console.error("[4] Files written. Forcing exit.");
-        process.stdout.write(JSON.stringify({ proof, publicSignals }));
-        process.exit(0);
-    } catch (err) {
-        console.error("[PROVER ERROR]", err.message, err.stack);
-        process.exit(1);
-    }
+    const { proof, publicSignals } = await snarkjs.plonk.fullProve(
+        circuitInput,
+        wasmPath,
+        activeZkeyPath
+    );
+    process.stdout.write(
+        JSON.stringify({ proof, publicSignals }),
+        () => process.exit(0)
+    );
 }
 
 run().catch((err) => {
-    console.error("[!] FATAL ERROR:", err && err.message ? err.message : err);
-    console.error(err && err.stack ? err.stack : "No stack trace available");
-    process.exit(1);
+    process.stderr.write(
+        `Proof generation failed: ${err && err.message ? err.message : "unknown error"}\n`,
+        () => process.exit(1)
+    );
 });

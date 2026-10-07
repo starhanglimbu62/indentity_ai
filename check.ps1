@@ -15,8 +15,6 @@ $FRONTEND = Join-Path $ROOT "frontend"
 $PYTHON = Join-Path $ROOT "env\Scripts\python.exe"
 $REGISTER_PAGE = Join-Path $FRONTEND "pages\register.tsx"
 $PROVER = Join-Path $ROOT "docs\prover.js"
-$PROOF = Join-Path $ROOT "docs\proof.json"
-$PUBLIC_SIGNALS = Join-Path $ROOT "docs\public.json"
 $SMOKE_TEST = Join-Path $ROOT "smoke-test.py"
 $CHECK_SCRIPT = Join-Path $ROOT "check.ps1"
 
@@ -210,16 +208,7 @@ Header "Frontend Dependencies"
 Push-Location $FRONTEND
 
 if (-not (Test-Path "node_modules")) {
-    Write-Host "node_modules missing. Running npm install..." -ForegroundColor Yellow
-
-    npm install
-
-    if ($LASTEXITCODE -eq 0) {
-        Pass "npm install"
-    }
-    else {
-        Fail "npm install"
-    }
+    Warn "Frontend node_modules is missing; this check will not install dependencies"
 }
 else {
     Pass "Frontend dependencies available"
@@ -389,57 +378,32 @@ $npmVersion = npm --version 2>&1
 Write-Host "Node: $nodeVersion"
 Write-Host "npm : $npmVersion"
 
-# Prefer direct snarkjs binary if available, otherwise try npx. Validate output contains a semver-like string.
-$snarkResult = Run-Command "snarkjs" @("--help")
-$snarkOutput = $snarkResult.Output -join " `n "
-if ($snarkResult.ExitCode -ne 0 -or -not ($snarkOutput -match "snarkjs")) {
-    Write-Host "snarkjs (direct) not usable, trying npx..."
-    $snarkResult = Run-Command "npx" @("snarkjs", "--help")
-    $snarkOutput = $snarkResult.Output -join " `n "
-}
+# Resolve snarkjs from docs, where the prover and verifier resolve their dependency.
+$DocsDirectory = Join-Path $ROOT "docs"
+Push-Location $DocsDirectory
+$snarkResult = Run-Command "node" @("-e", "require.resolve('snarkjs')")
+Pop-Location
 
-$snarkOutput | ForEach-Object { Write-Host $_ }
+$snarkResult.Output | ForEach-Object { Write-Host $_ }
 
-if (($snarkResult.ExitCode -eq 0 -or $snarkOutput -match "snarkjs") -and ($snarkOutput -match "\d+\.\d+\.\d+")) {
-    Pass "snarkjs available"
+if ($snarkResult.ExitCode -eq 0) {
+    Pass "Local snarkjs dependency available"
 } else {
-    Fail "snarkjs unavailable"
+    Fail "Local snarkjs dependency unavailable"
 }
 
 
 # ============================================================
-# 13. Run prover directly
+# 13. ZKP prover availability
 # ============================================================
 
-Header "Direct ZKP Prover Test"
+Header "ZKP Prover Availability"
 
 if (Test-Path $PROVER) {
-
-    Write-Host "Running:" -ForegroundColor DarkGray
-    Write-Host "node $PROVER" -ForegroundColor DarkGray
-
-    $proverOutput = & node $PROVER 2>&1
-    $proverExit = $LASTEXITCODE
-
-    $proverOutput | ForEach-Object {
-        Write-Host $_
-    }
-
-    $proofExists = Test-Path $PROOF
-    $publicSignalsExists = Test-Path $PUBLIC_SIGNALS
-
-    if ($proverExit -eq 0 -or ($proofExists -and $publicSignalsExists)) {
-        Pass "Direct prover execution"
-    }
-    else {
-        Fail "Direct prover execution"
-        Write-Host "Prover exit code: $proverExit" -ForegroundColor Red
-        Write-Host "proof.json exists: $proofExists; public.json exists: $publicSignalsExists" -ForegroundColor Red
-    }
-
+    Pass "docs/prover.js found; real proving and verification run in backend smoke test"
 }
 else {
-    Fail "Cannot run prover because docs/prover.js does not exist"
+    Fail "docs/prover.js not found"
 }
 
 

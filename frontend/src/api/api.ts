@@ -4,6 +4,7 @@
 
 type RequestOptions = RequestInit & {
   auth?: boolean;
+  bankAuth?: boolean;
 };
 
 export type RegisterPayload = {
@@ -30,6 +31,7 @@ async function request<T>(
 ): Promise<T> {
   const {
     auth = false,
+    bankAuth = false,
     headers: customHeaders,
     ...requestOptions
   } = options;
@@ -43,6 +45,13 @@ async function request<T>(
       headers,
       customHeaders as Record<string, string>
     );
+  }
+
+  if (bankAuth && typeof window !== "undefined") {
+    const bankApiKey = sessionStorage.getItem("bank_api_key");
+    if (bankApiKey) {
+      headers["X-Bank-API-Key"] = bankApiKey;
+    }
   }
 
   if (auth && typeof window !== "undefined") {
@@ -122,11 +131,11 @@ export async function createVerificationRequest(payload: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    auth: true,
+    bankAuth: true,
   });
 }
 
-export async function consentRequest(id: string, approved: boolean = true) {
+export async function consentRequest(id: string, approved: boolean) {
   return request(`/api/verification/${id}/consent/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,21 +179,21 @@ export async function getVerificationRequest(id: string) {
 export async function searchUsers(query: string) {
   return request(`/api/verification/search-users/?q=${encodeURIComponent(query)}`, {
     method: "GET",
-    auth: true,
+    bankAuth: true,
   });
 }
 
 export async function getBankRequests() {
   return request("/api/verification/bank-requests/", {
     method: "GET",
-    auth: true,
+    bankAuth: true,
   });
 }
 
 export async function getBankRequestDetail(id: string) {
   return request(`/api/verification/bank-requests/${id}/`, {
     method: "GET",
-    auth: true,
+    bankAuth: true,
   });
 }
 
@@ -215,7 +224,7 @@ export async function verifyRequest(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ proof, publicSignals }),
-    auth: true,
+    bankAuth: true,
   });
 }
 export type RegisterResponse = {
@@ -245,4 +254,3 @@ const api = {
 };
 
 export default api;
-

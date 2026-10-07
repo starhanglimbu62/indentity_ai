@@ -17,8 +17,8 @@ $ErrorActionPreference = "Continue"
 #   - Run frontend lint
 #   - Run frontend production build
 #   - Inspect ZKP artifacts
-#   - Check snarkjs availability
-#   - Run the real ZKP prover with timeout
+#   - Check the local snarkjs dependency
+#   - Run the real ZKP prover through the backend smoke test
 #
 # It DOES NOT:
 #   - Modify source files
@@ -45,8 +45,6 @@ $FRONTEND = Join-Path $ROOT "frontend"
 $PYTHON = Join-Path $ROOT "env\Scripts\python.exe"
 $SMOKE_TEST = Join-Path $ROOT "smoke-test.py"
 $PROVER = Join-Path $ROOT "docs\prover.js"
-$PROOF = Join-Path $ROOT "docs\proof.json"
-$PUBLIC_SIGNALS = Join-Path $ROOT "docs\public.json"
 
 $PASS = 0
 $FAIL = 0
@@ -494,8 +492,11 @@ else {
 
 Header "14. snarkjs"
 
-$SnarkOutput = & snarkjs --help 2>&1
+$DocsDirectory = Join-Path $ROOT "docs"
+Push-Location $DocsDirectory
+$SnarkOutput = & node -e "require.resolve('snarkjs')" 2>&1
 $SnarkExit = $LASTEXITCODE
+Pop-Location
 
 $SnarkText = $SnarkOutput -join "`n"
 
@@ -503,121 +504,25 @@ $SnarkOutput | ForEach-Object {
     Write-Host $_
 }
 
-if (
-    ($SnarkExit -eq 0 -or $SnarkText -match "snarkjs") -and
-    $SnarkText -match "Usage:|Full Command"
-) {
-    Pass "snarkjs available"
+if ($SnarkExit -eq 0) {
+    Pass "Local snarkjs dependency available"
 }
 else {
-    Fail "snarkjs unavailable"
+    Fail "Local snarkjs dependency unavailable"
 }
 
 
 # ============================================================
-# 15. Direct ZKP prover
+# 15. ZKP prover availability
 # ============================================================
 
-Header "15. Direct ZKP Prover"
+Header "15. ZKP Prover Availability"
 
 if (Test-Path $PROVER) {
-
-    $StdoutFile = Join-Path $ROOT ".prover.stdout.tmp"
-    $StderrFile = Join-Path $ROOT ".prover.stderr.tmp"
-
-    Remove-Item $StdoutFile -Force -ErrorAction SilentlyContinue
-    Remove-Item $StderrFile -Force -ErrorAction SilentlyContinue
-
-    Write-Host ""
-    Write-Host "Running real prover with 120-second timeout..." -ForegroundColor Yellow
-    Write-Host "node $PROVER" -ForegroundColor DarkGray
-    Write-Host ""
-
-    try {
-
-        $Process = Start-Process `
-            -FilePath "node" `
-            -ArgumentList "`"$PROVER`"" `
-            -WorkingDirectory $ROOT `
-            -RedirectStandardOutput $StdoutFile `
-            -RedirectStandardError $StderrFile `
-            -PassThru `
-            -NoNewWindow
-
-        $Completed = $Process.WaitForExit(120000)
-
-        if (-not $Completed) {
-
-            Write-Host ""
-            Write-Host "--- PROVER TIMEOUT ---" -ForegroundColor Red
-            Write-Host "The prover exceeded 120 seconds." -ForegroundColor Red
-
-            try {
-                Stop-Process `
-                    -Id $Process.Id `
-                    -Force `
-                    -ErrorAction SilentlyContinue
-            }
-            catch {
-            }
-
-            if (Test-Path $StdoutFile) {
-                Write-Host ""
-                Write-Host "--- PROVER STDOUT ---" -ForegroundColor Gray
-                Get-Content $StdoutFile
-            }
-
-            if (Test-Path $StderrFile) {
-                Write-Host ""
-                Write-Host "--- PROVER STDERR ---" -ForegroundColor Red
-                Get-Content $StderrFile
-            }
-
-            Fail "ZKP prover timed out"
-
-        }
-        else {
-
-            if (Test-Path $StdoutFile) {
-                Write-Host ""
-                Write-Host "--- PROVER STDOUT ---" -ForegroundColor Gray
-                Get-Content $StdoutFile
-            }
-
-            if (Test-Path $StderrFile) {
-                Write-Host ""
-                Write-Host "--- PROVER STDERR ---" -ForegroundColor Red
-                Get-Content $StderrFile
-            }
-
-            $ExitCode = $Process.ExitCode
-            $ProofExists = Test-Path $PROOF
-            $PublicSignalsExists = Test-Path $PUBLIC_SIGNALS
-
-            if ($ExitCode -eq 0 -or ($ProofExists -and $PublicSignalsExists)) {
-                Pass "ZKP prover executed successfully"
-            }
-            else {
-                Fail "ZKP prover failed"
-                Write-Host "Exit code: $ExitCode" -ForegroundColor Red
-                Write-Host "proof.json exists: $ProofExists; public.json exists: $PublicSignalsExists" -ForegroundColor Red
-            }
-        }
-
-    }
-    catch {
-
-        Fail "Unable to start ZKP prover"
-
-        Write-Host $_ -ForegroundColor Red
-    }
-
-    Remove-Item $StdoutFile -Force -ErrorAction SilentlyContinue
-    Remove-Item $StderrFile -Force -ErrorAction SilentlyContinue
-
+    Pass "Real proving and verification are exercised by the backend smoke test below"
 }
 else {
-    Fail "Cannot test prover because docs/prover.js is missing"
+    Fail "docs/prover.js is missing"
 }
 
 

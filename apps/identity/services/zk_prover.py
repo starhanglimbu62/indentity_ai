@@ -1,16 +1,11 @@
 import os
 import json
-import tempfile
 import subprocess
 from typing import Dict, Any, Tuple
-from datetime import datetime, timedelta
 
 # Wrapper around a Node/snarkjs-based prover helper.
-# For the prototype we attempt to call the node helper; tests include precomputed artifacts
-# used when snarkjs is not available in the environment.
 
 NODE_PROVER = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs', 'prover.js')
-ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'docs')
 
 
 def _call_node_prover(witness: Dict[str, Any]) -> Dict[str, Any]:
@@ -21,7 +16,13 @@ def _call_node_prover(witness: Dict[str, Any]) -> Dict[str, Any]:
     if not os.path.exists(node_script):
         raise FileNotFoundError("Node prover helper not found")
 
-    proc = subprocess.run(["node", node_script], input=json.dumps(witness).encode(), capture_output=True)
+    proc = subprocess.run(
+        ["node", node_script],
+        input=json.dumps(witness).encode(),
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr)
     return json.loads(proc.stdout.decode())
@@ -44,13 +45,4 @@ class Prover:
             "current_ts": int(current_ts),
         }
 
-        # Try Node prover first
-        try:
-            return _call_node_prover(witness)
-        except Exception:
-            # Fallback to precomputed artifact matching this request id (for CI/dev where snarkjs not installed)
-            artifact_path = os.path.join(ARTIFACTS_DIR, f"proof_{verification_request_id}.json")
-            if os.path.exists(artifact_path):
-                with open(artifact_path, 'r') as f:
-                    return json.load(f)
-            raise
+        return _call_node_prover(witness)

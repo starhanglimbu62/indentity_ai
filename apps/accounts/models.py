@@ -3,6 +3,14 @@ from django.db import models
 
 
 class User(AbstractUser):
+    bank = models.ForeignKey(
+        "banks.Bank",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="operators",
+    )
+
     email = models.EmailField(unique=True)
 
     phone_number = models.CharField(

@@ -20,11 +20,9 @@ class Bank(models.Model):
         unique=True
     )
 
-    api_key = models.CharField(
-        max_length=255,
+    api_key_hash = models.CharField(
+        max_length=64,
         unique=True,
-        blank=True,
-        default=""
     )
 
     webhook_url = models.URLField(
@@ -41,10 +39,9 @@ class Bank(models.Model):
         auto_now_add=True
     )
 
-    def save(self, *args, **kwargs):
-        if not self.api_key:
-            self.api_key = uuid.uuid4().hex
-        super().save(*args, **kwargs)
+    @property
+    def is_authenticated(self):
+        return True
 
     def __str__(self):
         return self.name
