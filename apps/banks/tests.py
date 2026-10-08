@@ -1,4 +1,5 @@
 from django.test import TestCase
+from django.test import Client
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
@@ -64,3 +65,15 @@ class BankAuthAPITests(TestCase):
         )
         self.assertEqual(info_response.status_code, 200)
         self.assertNotIn("api_key", info_response.data)
+
+    def test_bank_api_key_header_is_allowed_by_browser_cors_preflight(self):
+        response = Client().options(
+            "/api/verification/bank-requests/",
+            HTTP_ORIGIN="http://127.0.0.1:3000",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-bank-api-key",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        allowed_headers = response["access-control-allow-headers"].lower()
+        self.assertIn("x-bank-api-key", allowed_headers)

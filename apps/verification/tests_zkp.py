@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -8,7 +8,11 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.banks.models import Bank
 from apps.banks.services import hash_api_key
-from apps.identity.models import VerifiableCredential
+from apps.identity.models import (
+    IdentityDocument,
+    VerificationStatus,
+    VerifiableCredential,
+)
 from apps.identity.services.zk_prover import Prover
 from apps.identity.services.zk_verifier import Verifier
 from apps.verification.models import VerificationRequestStatus
@@ -76,6 +80,16 @@ class ZKPIntegrationTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200)
+
+    def attach_verified_source_document(self):
+        document = IdentityDocument.objects.create(
+            user=self.user,
+            status=VerificationStatus.VERIFIED,
+            extracted_dob=date(1990, 1, 15),
+        )
+        self.credential.source_document = document
+        self.credential.save(update_fields=["source_document"])
+        return document
 
     def submit_proof(self, request_id, proof):
         self.client.force_authenticate(user=None)
@@ -150,3 +164,51 @@ class ZKPIntegrationTests(TestCase):
             VerificationRequestStatus.VERIFIED,
         )
         self.assertIsNone(verification_request.challenge)
+
+    def test_holder_can_generate_and_verify_proof_after_consent(self):
+        self.attach_verified_source_document()
+        request_id, _ = self.create_request()
+        self.approve_request(request_id)
+
+        self.client.credentials()
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(f"/api/verification/{request_id}/prove/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["verified"])
+        self.assertEqual(
+            set(response.data),
+            {"verified", "claim", "timestamp", "verification_id"},
+        )
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_X_BANK_API_KEY="proof-test-api-key")
+        bank_response = self.client.get(
+            f"/api/verification/bank-requests/{request_id}/"
+        )
+        self.assertEqual(bank_response.status_code, 200, bank_response.data)
+        self.assertEqual(bank_response.data["status"], "VERIFIED")
+        self.assertNotIn("user", bank_response.data)
+        self.assertNotIn("credential", bank_response.data)
+
+    def test_holder_cannot_generate_proof_without_consent(self):
+        self.attach_verified_source_document()
+        request_id, _ = self.create_request()
+
+        self.client.credentials()
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(f"/api/verification/{request_id}/prove/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"], "User consent is required before proof generation.")
+
+    def test_holder_proof_generation_fails_without_verified_source_dob(self):
+        request_id, _ = self.create_request()
+        self.approve_request(request_id)
+
+        self.client.credentials()
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(f"/api/verification/{request_id}/prove/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("verified source document", response.data["error"])

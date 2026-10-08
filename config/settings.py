@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 
@@ -160,6 +161,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+CORS_ALLOW_HEADERS = (*default_headers, "x-bank-api-key")
 
 #for smoke test
 import sys

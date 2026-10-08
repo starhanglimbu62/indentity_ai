@@ -1,11 +1,11 @@
 import json
 import subprocess
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 
 from django.db import transaction
 from django.utils import timezone
 
-from apps.identity.models import CredentialStatus
+from apps.identity.models import CredentialStatus, VerificationStatus
 from apps.identity.services.zk_claims import CLAIM_AGE_OVER_18
 
 from .models import (
@@ -141,7 +141,20 @@ class VerificationService:
             else:
                 verification_request.status = VerificationRequestStatus.APPROVED
                 verification_request.user_consented_at = timezone.now()
-                verification_request.save(update_fields=["status", "user_consented_at"])
+                update_fields = ["status", "user_consented_at"]
+                if (
+                    not verification_request.challenge
+                    or not verification_request.challenge_expires_at
+                    or timezone.now() >= verification_request.challenge_expires_at
+                ):
+                    (
+                        verification_request.challenge,
+                        verification_request.challenge_expires_at,
+                    ) = generate_challenge()
+                    update_fields.extend(
+                        ["challenge", "challenge_expires_at"]
+                    )
+                verification_request.save(update_fields=update_fields)
                 AuditService.record_event(
                     user=verification_request.user,
                     event_type="VERIFICATION_REQUEST_APPROVED",
@@ -152,6 +165,113 @@ class VerificationService:
         if expired:
             raise InvalidStateTransition("Verification request has expired.")
         return verification_request
+
+    @staticmethod
+    def generate_and_verify_proof(verification_request):
+        verification_request = (
+            VerificationRequest.objects.select_related(
+                "credential__source_document",
+                "user",
+            )
+            .get(pk=verification_request.pk)
+        )
+        if verification_request.status != VerificationRequestStatus.APPROVED:
+            raise InvalidStateTransition(
+                "User consent is required before proof generation."
+            )
+        if verification_request.user_consented_at is None:
+            raise InvalidStateTransition(
+                "An explicit user consent record is required."
+            )
+        if (
+            verification_request.expires_at
+            and timezone.now() >= verification_request.expires_at
+        ):
+            raise InvalidStateTransition("Verification request has expired.")
+
+        credential = verification_request.credential
+        document = credential.source_document
+        if (
+            credential.user_id != verification_request.user_id
+            or credential.status != CredentialStatus.ACTIVE
+            or not credential.is_active
+            or (credential.expires_at and timezone.now() >= credential.expires_at)
+        ):
+            raise InvalidStateTransition("Credential is not active for this user.")
+        if (
+            document is None
+            or document.user_id != verification_request.user_id
+            or document.status != VerificationStatus.VERIFIED
+            or document.extracted_dob is None
+        ):
+            raise InvalidStateTransition(
+                "A verified source document with a date of birth is required."
+            )
+
+        now = timezone.now()
+        challenge, challenge_expires_at = verification_request.challenge, (
+            verification_request.challenge_expires_at
+        )
+        if (
+            not challenge
+            or not challenge_expires_at
+            or now >= challenge_expires_at
+        ):
+            challenge, challenge_expires_at = generate_challenge()
+            with transaction.atomic():
+                locked_request = VerificationRequest.objects.select_for_update().get(
+                    pk=verification_request.pk
+                )
+                if (
+                    locked_request.status != VerificationRequestStatus.APPROVED
+                    or locked_request.user_consented_at is None
+                ):
+                    raise InvalidStateTransition(
+                        "User consent is required before proof generation."
+                    )
+                locked_request.challenge = challenge
+                locked_request.challenge_expires_at = challenge_expires_at
+                locked_request.save(
+                    update_fields=["challenge", "challenge_expires_at"]
+                )
+
+        dob_ts = int(
+            datetime.combine(
+                document.extracted_dob,
+                datetime.min.time(),
+                tzinfo=datetime_timezone.utc,
+            ).timestamp()
+        )
+        current_ts = int(now.timestamp())
+        from apps.identity.services.zk_prover import Prover
+
+        try:
+            proof_bundle = Prover.generate_age_proof(
+                credential_id=str(credential.id),
+                dob_ts=dob_ts,
+                verification_request_id=str(verification_request.id),
+                challenge=challenge,
+                current_ts=current_ts,
+            )
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            raise InvalidStateTransition(
+                "Cryptographic proof generation is unavailable."
+            ) from exc
+
+        if (
+            not isinstance(proof_bundle, dict)
+            or "proof" not in proof_bundle
+            or "publicSignals" not in proof_bundle
+        ):
+            raise InvalidStateTransition(
+                "Cryptographic proof generation returned invalid data."
+            )
+
+        return VerificationService.verify_request(
+            verification_request,
+            proof=proof_bundle["proof"],
+            public_signals=proof_bundle["publicSignals"],
+        )
 
     @staticmethod
     def deny_request(verification_request):

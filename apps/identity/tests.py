@@ -142,6 +142,46 @@ class IdentityPipelineTests(TestCase):
         self.assertIsNotNone(credential)
         self.assertEqual(credential.user, self.user)
 
+    def test_credential_list_is_user_scoped_and_does_not_disclose_hash(self):
+        credential = CredentialService.create_credential(self.user, "1234567890")
+        other_user = User.objects.create_user(
+            username="bob",
+            email="bob@example.com",
+            password="test-password",
+        )
+        CredentialService.create_credential(other_user, "0987654321")
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.get("/api/identity/credentials/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], str(credential.id))
+        self.assertEqual(response.data[0]["status"], credential.status)
+        self.assertNotIn("credential_hash", response.data[0])
+        self.assertNotIn("source_document", response.data[0])
+
+    def test_credential_list_requires_authentication(self):
+        response = APIClient().get("/api/identity/credentials/")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_credential_source_document_must_belong_to_owner(self):
+        other_user = User.objects.create_user(
+            username="bob",
+            email="bob@example.com",
+            password="test-password",
+        )
+        document = IdentityDocument.objects.create(user=other_user)
+
+        with self.assertRaises(ValueError):
+            CredentialService.create_credential(
+                self.user,
+                "1234567890",
+                source_document=document,
+            )
+
     def test_document_deletion(self):
         document = IdentityDocument.objects.create(
             user=self.user,

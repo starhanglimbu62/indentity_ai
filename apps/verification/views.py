@@ -137,6 +137,38 @@ class ConsentView(APIView):
         return Response({"status": status_str})
 
 
+class GenerateProofView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        verification_request = (
+            VerificationRequest.objects.filter(id=pk, user=request.user)
+            .select_related("credential__source_document")
+            .first()
+        )
+        if not verification_request:
+            return Response(
+                {"error": "Verification request not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            verification_request = VerificationService.generate_and_verify_proof(
+                verification_request
+            )
+        except (InvalidStateTransition, ValueError) as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "verified": True,
+                "claim": verification_request.claim,
+                "timestamp": verification_request.verified_at,
+                "verification_id": verification_request.id,
+            }
+        )
+
+
 class VerifyRequestView(APIView):
 
     authentication_classes = [BankAPIKeyAuthentication, JWTAuthentication]

@@ -25,6 +25,22 @@ export type ApiError = {
   data: unknown;
 };
 
+export type CredentialSummary = {
+  id: string;
+  issuer: string;
+  issued_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+  status: string;
+};
+
+export type VerificationResult = {
+  verified: boolean;
+  claim: string;
+  timestamp: string;
+  verification_id: string;
+};
+
 async function request<T>(
   path: string,
   options: RequestOptions = {}
@@ -176,6 +192,20 @@ export async function getVerificationRequest(id: string) {
   });
 }
 
+export async function getCredentials(): Promise<CredentialSummary[]> {
+  return request<CredentialSummary[]>("/api/identity/credentials/", {
+    method: "GET",
+    auth: true,
+  });
+}
+
+export async function generateProof(id: string): Promise<VerificationResult> {
+  return request<VerificationResult>(`/api/verification/${id}/prove/`, {
+    method: "POST",
+    auth: true,
+  });
+}
+
 export async function searchUsers(query: string) {
   return request(`/api/verification/search-users/?q=${encodeURIComponent(query)}`, {
     method: "GET",
@@ -245,6 +275,8 @@ const api = {
   markNotificationAsRead,
   getVerificationRequests,
   getVerificationRequest,
+  getCredentials,
+  generateProof,
   searchUsers,
   getBankRequests,
   getBankRequestDetail,

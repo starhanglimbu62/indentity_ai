@@ -1,5 +1,5 @@
 import Layout from '../../src/components/Layout'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import api from '../../src/api/api'
 
@@ -18,22 +18,22 @@ export default function BankDashboard() {
     }
   }, [router])
 
-  useEffect(() => {
-    const fetchRequests = async () => {
-      try {
-        const data = await api.getBankRequests() as any[]
-        setRequests(data)
-      } catch (err) {
-        setError('Failed to fetch requests')
-      } finally {
-        setLoading(false)
-      }
+  const fetchRequests = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api.getBankRequests() as any[]
+      setRequests(data)
+    } catch (err) {
+      setError('Failed to fetch requests')
+    } finally {
+      setLoading(false)
     }
+  }, [])
 
-    if (bank) {
-      fetchRequests()
-    }
-  }, [bank])
+  useEffect(() => {
+    if (bank) fetchRequests()
+  }, [bank, fetchRequests])
 
   const handleLogout = () => {
     sessionStorage.removeItem('bank')
@@ -55,6 +55,13 @@ export default function BankDashboard() {
               className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white transition hover:bg-indigo-700"
             >
               + New Request
+            </button>
+            <button
+              onClick={fetchRequests}
+              disabled={loading}
+              className="rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
             </button>
             <button
               onClick={handleLogout}

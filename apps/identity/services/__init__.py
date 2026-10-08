@@ -95,7 +95,11 @@ class IdentityService:
         document.extracted_dob = validated["dob"]
         document.save(update_fields=["extracted_nid", "extracted_name", "extracted_dob"])
 
-        credential = CredentialService.create_credential(document.user, validated["nid"])
+        credential = CredentialService.create_credential(
+            document.user,
+            validated["nid"],
+            source_document=document,
+        )
 
         document.status = VerificationStatus.VERIFIED
         document.processed_at = timezone.now()

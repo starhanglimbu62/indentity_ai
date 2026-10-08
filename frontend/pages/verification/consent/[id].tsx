@@ -9,6 +9,7 @@ export default function ConsentPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [decision, setDecision] = useState<boolean | null>(null)
   const [request, setRequest] = useState<any>(null)
   const [fetching, setFetching] = useState(true)
 
@@ -44,8 +45,9 @@ export default function ConsentPage() {
     try {
       await api.consentRequest(String(id), approved)
       setSuccess(true)
+      setDecision(approved)
       setTimeout(() => {
-        router.push('/dashboard')
+        router.push(approved ? `/verification/result/${id}` : '/dashboard')
       }, 2000)
     } catch (err: any) {
       setError(err?.data?.error || (approved ? 'Consent failed' : 'Denial failed'))
@@ -88,6 +90,10 @@ export default function ConsentPage() {
                 <p className="mt-2 text-sm text-indigo-700">The bank wants to verify that you are over 18 years old.</p>
               </div>
 
+              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Prototype limitation: identity extraction is mocked, and the age proof is not cryptographically bound to the credential or its source date of birth. This result is not reliable production identity evidence.
+              </div>
+
               <div className="space-y-4">
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                   <p className="text-sm font-semibold text-emerald-900 flex items-center gap-2">
@@ -125,7 +131,7 @@ export default function ConsentPage() {
 
               {success ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 font-semibold text-emerald-800">
-                  ✓ Your decision has been recorded. Redirecting to dashboard...
+                  ✓ Your decision has been recorded. {decision ? 'Continuing to verification status...' : 'Returning to dashboard...'}
                 </div>
               ) : (
                 <div className="mt-6 flex gap-3">
@@ -153,4 +159,3 @@ export default function ConsentPage() {
     </Layout>
   )
 }
-

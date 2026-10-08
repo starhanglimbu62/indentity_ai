@@ -1,5 +1,5 @@
 import Layout from '../../src/components/Layout'
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import api from '../../src/api/api'
 
@@ -23,19 +23,20 @@ export default function BankRequestPage() {
     }
   }, [router])
 
-  const searchUsers = async () => {
+  const searchUsers = useCallback(async () => {
     if (!searchQuery.trim() || searchQuery.length < 2) {
       setUsers([])
       return
     }
 
     try {
+      setError(null)
       const data = await api.searchUsers(searchQuery) as any[]
       setUsers(data)
     } catch (err) {
       setError('Failed to search users')
     }
-  }
+  }, [searchQuery])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -44,7 +45,7 @@ export default function BankRequestPage() {
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery])
+  }, [searchQuery, searchUsers])
 
   const submit = async (e: any) => {
     e.preventDefault()
@@ -112,8 +113,8 @@ export default function BankRequestPage() {
                       }}
                       className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition"
                     >
-                      <div className="font-semibold text-slate-900">{user.name}</div>
-                      <div className="text-sm text-slate-500">{user.email}</div>
+                      <div className="font-semibold text-slate-900">Account ID</div>
+                      <div className="break-all font-mono text-xs text-slate-500">{user.id}</div>
                     </button>
                   ))}
                 </div>
@@ -123,8 +124,9 @@ export default function BankRequestPage() {
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div>
                     <p className="font-semibold text-emerald-900">
-                      {users.find(u => u.id === selectedUserId)?.name || 'Selected user'}
+                      Selected account
                     </p>
+                    <p className="break-all font-mono text-xs text-emerald-800">{selectedUserId}</p>
                   </div>
                   <button
                     type="button"

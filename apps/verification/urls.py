@@ -4,6 +4,7 @@ from .views import (
     CreateVerificationRequestView,
     RequestChallengeView,
     ConsentView,
+    GenerateProofView,
     VerifyRequestView,
     ListVerificationRequestsView,
     GetVerificationRequestView,
@@ -45,6 +46,12 @@ urlpatterns = [
         "<uuid:pk>/consent/",
         ConsentView.as_view(),
         name="verification-consent",
+    ),
+
+    path(
+        "<uuid:pk>/prove/",
+        GenerateProofView.as_view(),
+        name="generate-verification-proof",
     ),
 
     path(

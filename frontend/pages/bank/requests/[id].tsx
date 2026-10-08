@@ -1,5 +1,5 @@
 import Layout from '../../../src/components/Layout'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import api from '../../../src/api/api'
 
@@ -17,23 +17,25 @@ export default function BankRequestDetailPage() {
     }
   }, [router])
 
-  useEffect(() => {
-    const fetchRequest = async () => {
-      if (!id) return
-      try {
-        const data = await api.getBankRequestDetail(String(id))
-        setRequest(data)
-      } catch (err) {
-        setError('Failed to load request')
-      } finally {
-        setLoading(false)
-      }
+  const fetchRequest = useCallback(async () => {
+    if (!id) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api.getBankRequestDetail(String(id))
+      setRequest(data)
+    } catch (err) {
+      setError('Failed to load request')
+    } finally {
+      setLoading(false)
     }
+  }, [id])
 
+  useEffect(() => {
     if (id && typeof window !== 'undefined' && sessionStorage.getItem('bank')) {
       fetchRequest()
     }
-  }, [id])
+  }, [id, fetchRequest])
 
   if (loading) {
     return (
@@ -77,6 +79,13 @@ export default function BankRequestDetailPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Verification Request</p>
           <h1 className="mt-2 text-2xl font-bold text-slate-900">Request details</h1>
+          <button
+            onClick={fetchRequest}
+            disabled={loading}
+            className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+          >
+            {loading ? 'Refreshing...' : 'Refresh status'}
+          </button>
 
           <div className="mt-6 space-y-4">
             <div className="rounded-lg bg-slate-50 p-4">
@@ -137,7 +146,7 @@ export default function BankRequestDetailPage() {
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-emerald-700">
-                  The user has proven they meet the verification criteria without revealing personal details.
+                  A cryptographic proof was accepted for the claim. This prototype does not bind its private date of birth to the credential; do not rely on this as identity evidence.
                 </p>
               </div>
             )}
@@ -168,10 +177,10 @@ export default function BankRequestDetailPage() {
             {request?.status === 'APPROVED' && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                 <p className="text-sm font-semibold text-blue-900">
-                  User approved - Verification in progress
+                  Consent recorded - Proof not verified
                 </p>
                 <p className="mt-2 text-sm text-blue-800">
-                  The user has approved the verification. Generating and verifying zero-knowledge proof...
+                  The user approved this request, but no proof has been verified yet. Refresh this request to check for a result.
                 </p>
               </div>
             )}
@@ -182,10 +191,6 @@ export default function BankRequestDetailPage() {
                 <div className="flex justify-between">
                   <span>Created:</span>
                   <span>{new Date(request?.created_at).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Bank:</span>
-                  <span>{request?.bank?.name} ({request?.bank?.code})</span>
                 </div>
               </div>
             </div>

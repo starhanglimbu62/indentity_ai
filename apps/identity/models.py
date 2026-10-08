@@ -87,6 +87,14 @@ class VerifiableCredential(models.Model):
         related_name="credentials"
     )
 
+    source_document = models.ForeignKey(
+        IdentityDocument,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credentials",
+    )
+
     credential_hash = models.CharField(
         max_length=128,
         unique=True

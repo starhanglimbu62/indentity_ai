@@ -50,6 +50,7 @@ class CredentialSerializer(
             "issued_at",
             "expires_at",
             "is_active",
+            "status",
         ]
 
         read_only_fields = fields
